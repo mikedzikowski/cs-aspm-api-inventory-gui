@@ -2111,7 +2111,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 9999))
-    server = HTTPServer(('localhost', port), ASPMLiveDataHandler)
+    server = HTTPServer(('0.0.0.0', port), ASPMLiveDataHandler)
 
     print(f"🚀 ASPM Service Inventory with Authentication starting on http://localhost:{port}")
     print(f"📋 Features:")
