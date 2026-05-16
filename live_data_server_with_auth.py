@@ -63,10 +63,12 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
         session_id = self.get_session_id()
         return session_id and session_id in self.sessions
 
-    def test_credentials(self, client_id, client_secret):
+    def test_credentials(self, client_id, client_secret, base_url="https://api.crowdstrike.com"):
         """Test CrowdStrike credentials"""
         try:
-            url = "https://api.crowdstrike.com/oauth2/token"
+            # Ensure base_url doesn't end with slash
+            base_url = base_url.rstrip('/')
+            url = f"{base_url}/oauth2/token"
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             data = {
                 "client_id": client_id,
@@ -79,7 +81,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
         except:
             return False
 
-    def serve_login_page(self, error=None, client_id=''):
+    def serve_login_page(self, error=None, client_id='', base_url='https://api.crowdstrike.com'):
         """Serve authentication page"""
         html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -133,7 +135,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             font-weight: 500;
             font-size: 0.9rem;
         }}
-        input[type="text"], input[type="password"] {{
+        input[type="text"], input[type="password"], input[type="url"], select {{
             width: 100%;
             padding: 12px 16px;
             background: #0d1117;
@@ -144,10 +146,24 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             box-sizing: border-box;
             font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
         }}
-        input[type="text"]:focus, input[type="password"]:focus {{
+        input[type="text"]:focus, input[type="password"]:focus, input[type="url"]:focus, select:focus {{
             outline: none;
             border-color: #58a6ff;
             box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+        }}
+        select {{
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%238b949e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 12px center;
+            background-repeat: no-repeat;
+            background-size: 16px;
+            padding-right: 40px;
+        }}
+        select option {{
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 8px 12px;
         }}
         .btn {{
             width: 100%;
@@ -197,6 +213,25 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
         <form method="POST" action="/login">
             <div class="form-group">
+                <label for="base_url">CrowdStrike Environment URL</label>
+                <select id="base_url" name="base_url" required>
+                    <option value="https://api.crowdstrike.com" {'selected' if base_url == 'https://api.crowdstrike.com' else ''}>🌐 US Commercial (api.crowdstrike.com)</option>
+                    <option value="https://api.us-1.crowdstrike.com" {'selected' if base_url == 'https://api.us-1.crowdstrike.com' else ''}>🇺🇸 US-1 Government (api.us-1.crowdstrike.com)</option>
+                    <option value="https://api.us-2.crowdstrike.com" {'selected' if base_url == 'https://api.us-2.crowdstrike.com' else ''}>🇺🇸 US-2 Government (api.us-2.crowdstrike.com)</option>
+                    <option value="https://api.eu-1.crowdstrike.com" {'selected' if base_url == 'https://api.eu-1.crowdstrike.com' else ''}>🇪🇺 EU-1 (api.eu-1.crowdstrike.com)</option>
+                    <option value="https://api.laggar.gcw.crowdstrike.com" {'selected' if base_url == 'https://api.laggar.gcw.crowdstrike.com' else ''}>🏛️ US Government (api.laggar.gcw.crowdstrike.com)</option>
+                    <option value="custom">⚙️ Custom URL</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="custom-url-group" style="display: none;">
+                <label for="custom_base_url">Custom CrowdStrike URL</label>
+                <input type="url" id="custom_base_url" name="custom_base_url"
+                       placeholder="https://api.your-instance.crowdstrike.com"
+                       value="{base_url if base_url not in ['https://api.crowdstrike.com', 'https://api.us-1.crowdstrike.com', 'https://api.us-2.crowdstrike.com', 'https://api.eu-1.crowdstrike.com', 'https://api.laggar.gcw.crowdstrike.com'] else ''}">
+            </div>
+
+            <div class="form-group">
                 <label for="client_id">Client ID</label>
                 <input type="text" id="client_id" name="client_id" required
                        placeholder="Your CrowdStrike API Client ID" value="{client_id}">
@@ -210,6 +245,27 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
             <button type="submit" class="btn">🚀 Authenticate & Access Application</button>
         </form>
+
+        <script>
+        document.getElementById('base_url').addEventListener('change', function() {{
+            const customGroup = document.getElementById('custom-url-group');
+            const customInput = document.getElementById('custom_base_url');
+            if (this.value === 'custom') {{
+                customGroup.style.display = 'block';
+                customInput.required = true;
+            }} else {{
+                customGroup.style.display = 'none';
+                customInput.required = false;
+                customInput.value = '';
+            }}
+        }});
+
+        // Check initial state
+        if (document.getElementById('base_url').value === 'custom') {{
+            document.getElementById('custom-url-group').style.display = 'block';
+            document.getElementById('custom_base_url').required = true;
+        }}
+        </script>
 
         <div class="info">
             <strong>About Authentication:</strong><br>
@@ -235,19 +291,29 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
             client_id = form_data.get('client_id', [''])[0].strip()
             client_secret = form_data.get('client_secret', [''])[0].strip()
+            base_url = form_data.get('base_url', [''])[0].strip()
+            custom_base_url = form_data.get('custom_base_url', [''])[0].strip()
 
-            if not client_id or not client_secret:
-                self.serve_login_page("Both Client ID and Client Secret are required", client_id)
+            # Handle custom URL
+            if base_url == 'custom':
+                if not custom_base_url:
+                    self.serve_login_page("Custom URL is required when 'Custom URL' is selected", client_id, base_url)
+                    return
+                base_url = custom_base_url.rstrip('/')
+
+            if not client_id or not client_secret or not base_url:
+                self.serve_login_page("Client ID, Client Secret, and CrowdStrike URL are all required", client_id, base_url)
                 return
 
-            # Test credentials
-            if self.test_credentials(client_id, client_secret):
+            # Test credentials with custom base URL
+            if self.test_credentials(client_id, client_secret, base_url):
                 # Create session
                 import uuid
                 session_id = str(uuid.uuid4())
                 self.sessions[session_id] = {
                     'client_id': client_id,
                     'client_secret': client_secret,
+                    'base_url': base_url,
                     'login_time': datetime.now(timezone.utc).isoformat()
                 }
 
@@ -257,11 +323,11 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                 self.send_header('Location', '/')
                 self.end_headers()
             else:
-                self.serve_login_page("Invalid credentials or unable to connect to CrowdStrike API", client_id)
+                self.serve_login_page("Invalid credentials or unable to connect to CrowdStrike API", client_id, base_url)
 
         except Exception as e:
             print(f"❌ Login error: {e}")
-            self.serve_login_page("Login error occurred", "")
+            self.serve_login_page("Login error occurred", "", "https://api.crowdstrike.com")
 
     def handle_logout(self):
         """Handle logout"""
@@ -858,12 +924,13 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             session_data = self.sessions.get(session_id, {})
             client_id = session_data.get('client_id')
             client_secret = session_data.get('client_secret')
+            base_url = session_data.get('base_url', 'https://api.crowdstrike.com')
 
             print(f"📋 Using session credentials: {client_id[:8] if client_id else 'None'}...")
 
             # Get ASPM token
             print("🔐 Getting ASPM token...")
-            token = self.get_aspm_token(client_id, client_secret)
+            token = self.get_aspm_token(client_id, client_secret, base_url)
             if not token:
                 print("❌ Failed to get ASMP token")
                 self.send_json_response({"error": "Authentication failed"}, 401)
@@ -873,7 +940,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
             # Query interfaces for live data
             print("🔍 Querying ASMP interfaces...")
-            services = self.query_interfaces_for_service(token, service_name)
+            services = self.query_interfaces_for_service(token, service_name, base_url)
 
             if services is None:
                 print("❌ Interface query returned None")
@@ -888,7 +955,8 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
                 try:
                     # Try to find the service directly in ASPM services
-                    url = "https://api.crowdstrike.com/aspm-api-gateway/api/v1/query"
+                    base_url = base_url.rstrip('/')
+                    url = f"{base_url}/aspm-api-gateway/api/v1/query"
                     headers = {
                         "Authorization": f"Bearer {token}",
                         "Content-Type": "application/json"
@@ -924,7 +992,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                     print(f"🎯 Exact match found: {service_name_found}")
 
                                     # Get deployment information for this service
-                                    deployments = self.get_service_deployments(token, service_name_found)
+                                    deployments = self.get_service_deployments(token, service_name_found, base_url)
 
                                     # Create service entry with basic info but no interfaces
                                     service_entry = {
@@ -1040,15 +1108,16 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             session_data = self.sessions.get(session_id, {})
             client_id = session_data.get('client_id')
             client_secret = session_data.get('client_secret')
+            base_url = session_data.get('base_url', 'https://api.crowdstrike.com')
 
             # Get ASPM token
-            token = self.get_aspm_token(client_id, client_secret)
+            token = self.get_aspm_token(client_id, client_secret, base_url)
             if not token:
                 self.send_json_response({"error": "Authentication failed"}, 401)
                 return
 
             # Query host details and deployed services
-            host_details, deployed_services = self.query_host_details(token, host_name)
+            host_details, deployed_services = self.query_host_details(token, host_name, base_url)
 
             if host_details is None:
                 self.send_json_response({"error": "Failed to query ASPM API"}, 500)
@@ -1083,14 +1152,16 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             print(f"❌ Error handling host details query: {e}")
             self.send_json_response({"error": f"Internal error: {e}"}, 500)
 
-    def get_aspm_token(self, client_id, client_secret):
+    def get_aspm_token(self, client_id, client_secret, base_url="https://api.crowdstrike.com"):
         """Get ASPM authentication token using session credentials"""
         try:
             if not client_id or not client_secret:
                 print("❌ Missing credentials from session")
                 return None
 
-            url = "https://api.crowdstrike.com/oauth2/token"
+            # Ensure base_url doesn't end with slash
+            base_url = base_url.rstrip('/')
+            url = f"{base_url}/oauth2/token"
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             data = {
                 "client_id": client_id,
@@ -1133,10 +1204,11 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
         return 'http'
 
-    def query_interfaces_for_service(self, token, service_name):
+    def query_interfaces_for_service(self, token, service_name, base_url="https://api.crowdstrike.com"):
         """Query ASPM interfaces to find services with live data - targeted approach"""
         try:
-            url = "https://api.crowdstrike.com/aspm-api-gateway/api/v1/query"
+            base_url = base_url.rstrip('/')
+            url = f"{base_url}/aspm-api-gateway/api/v1/query"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
@@ -1608,7 +1680,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             print(f"🔍 Looking up deployment information for services...")
             for service in services:
                 service_name = service['name']
-                deployments = self.get_service_deployments(token, service_name)
+                deployments = self.get_service_deployments(token, service_name, base_url)
                 service["deployments"] = deployments
 
                 if deployments:
@@ -1636,7 +1708,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
         # like www.e-verify.gov, www.kycproof.com
         return None
 
-    def get_service_deployments(self, token, service_name):
+    def get_service_deployments(self, token, service_name, base_url="https://api.crowdstrike.com"):
         """Get deployment information for a specific service from ASPM API - REAL DATA APPROACH"""
         try:
             print(f"🔍 Looking for real deployment data for service: {service_name}")
@@ -1644,7 +1716,8 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             # Check ASPM data to determine if this is an external service
             # No hardcoded domain list - rely on ASPM classification
 
-            url = "https://api.crowdstrike.com/aspm-api-gateway/api/v1/query"
+            base_url = base_url.rstrip('/')
+            url = f"{base_url}/aspm-api-gateway/api/v1/query"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
@@ -1839,11 +1912,12 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             print(f"⚠️ Error getting real deployments for {service_name}: {e}")
             return []
 
-    def query_host_details(self, token, host_name):
+    def query_host_details(self, token, host_name, base_url="https://api.crowdstrike.com"):
         """Query ASPM for host details and deployed services using REAL data from Falcon Host Management API"""
         print(f"🚀 DEBUG: query_host_details called with host_name='{host_name}'")
         try:
-            url = "https://api.crowdstrike.com/aspm-api-gateway/api/v1/query"
+            base_url = base_url.rstrip('/')
+            url = f"{base_url}/aspm-api-gateway/api/v1/query"
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
@@ -1874,7 +1948,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
             # Second: Get REAL host details from Falcon Host Management API
             print(f"🔍 Getting real host details from Falcon Host Management API...")
-            real_host_data = self.get_real_host_data(token, host_name)
+            real_host_data = self.get_real_host_data(token, host_name, base_url)
 
             # Build host details with REAL data from Falcon API + ASPM deployment data
             host_details = {
@@ -1971,7 +2045,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                         print(f"   🎯 MATCH! Service '{service_name}' found on deployment '{deployment.get('name')}'")
 
                                         # Get detailed service info using the proven service query method
-                                        service_results = self.query_interfaces_for_service(token, service_name)
+                                        service_results = self.query_interfaces_for_service(token, service_name, base_url)
 
                                         if service_results and len(service_results) > 0:
                                             service_detail = service_results[0]
@@ -2045,11 +2119,12 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             print(f"❌ Host details query failed: {e}")
             return None, None
 
-    def get_real_host_data(self, token, hostname):
+    def get_real_host_data(self, token, hostname, base_url="https://api.crowdstrike.com"):
         """Get REAL host data from Falcon Host Management API"""
         try:
+            base_url = base_url.rstrip('/')
             # Get all device IDs and search for our hostname
-            host_ids_url = 'https://api.crowdstrike.com/devices/queries/devices/v1?limit=1000'
+            host_ids_url = f'{base_url}/devices/queries/devices/v1?limit=1000'
             headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
 
             print(f"   🔍 Searching Falcon Host Management API for hostname: {hostname}")
@@ -2063,7 +2138,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             print(f"   📋 Found {len(device_ids)} total devices in Falcon")
 
             # Get device details in batches to find our hostname
-            device_details_url = 'https://api.crowdstrike.com/devices/entities/devices/v2'
+            device_details_url = f'{base_url}/devices/entities/devices/v2'
             batch_size = 100
 
             for i in range(0, len(device_ids), batch_size):

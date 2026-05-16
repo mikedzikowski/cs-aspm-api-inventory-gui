@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aspm-service-inventory
+  namespace: aspm-inventory
+  labels:
+    app: aspm-service-inventory
+spec:
+  selector:
+    app: aspm-service-inventory
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
+  sessionAffinity: None

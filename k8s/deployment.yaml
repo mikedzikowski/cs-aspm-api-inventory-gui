@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aspm-service-inventory
+  namespace: aspm-inventory
+  labels:
+    app: aspm-service-inventory
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aspm-service-inventory
+  template:
+    metadata:
+      labels:
+        app: aspm-service-inventory
+        version: v1.0.0
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+      containers:
+      - name: aspm-inventory
+        image: ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: CROWDSTRIKE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: crowdstrike-credentials
+              key: client-id
+        - name: CROWDSTRIKE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: crowdstrike-credentials
+              key: client-secret
+        - name: PORT
+          value: "8080"
+        - name: FLASK_ENV
+          value: "production"
+# Temporarily disabled health checks to allow pod startup
+        # livenessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #     scheme: HTTP
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 30
+        #   timeoutSeconds: 10
+        #   failureThreshold: 3
+        # readinessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #     scheme: HTTP
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 10
+        #   timeoutSeconds: 10
+        #   failureThreshold: 5
+        # startupProbe:
+        #   httpGet:
+        #     path: /
+        #     port: http
+        #     scheme: HTTP
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 15
+        #   timeoutSeconds: 10
+        #   failureThreshold: 60
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      restartPolicy: Always

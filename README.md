@@ -24,7 +24,7 @@ docker run -d \
   ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
 ```
 
-**Access**: http://localhost:8080
+**Access**: <http://localhost:8080>
 
 ### Option 2: Local Docker Build
 
@@ -43,7 +43,7 @@ docker run -d \
   aspm-inventory
 ```
 
-**Access**: http://localhost:8080
+**Access**: <http://localhost:8080>
 
 ### Option 3: Direct Python Execution
 
@@ -62,7 +62,7 @@ CROWDSTRIKE_CLIENT_SECRET="your_client_secret" \
 python3 live_data_server_with_auth.py
 ```
 
-**Access**: http://localhost:8080
+**Access**: <http://localhost:8080>
 
 ### Option 4: Environment File Configuration
 
@@ -79,6 +79,7 @@ nano .env
 ```
 
 **.env file:**
+
 ```env
 CROWDSTRIKE_CLIENT_ID=your_client_id_here
 CROWDSTRIKE_CLIENT_SECRET=your_client_secret_here
@@ -90,6 +91,200 @@ FLASK_ENV=production
 # Run with environment file
 python3 live_data_server_with_auth.py
 ```
+
+### Option 5: Kubernetes Deployment
+
+#### Quick Deploy with kubectl
+
+```bash
+# Create secret for CrowdStrike credentials
+kubectl create secret generic crowdstrike-credentials \
+  --from-literal=client-id="your_client_id" \
+  --from-literal=client-secret="your_client_secret"
+
+# Apply deployment manifests
+kubectl apply -f k8s/
+```
+
+#### Manual Kubernetes Manifests
+
+**Create namespace (optional):**
+```yaml
+# k8s/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aspm-inventory
+```
+
+**Secret for credentials:**
+```yaml
+# k8s/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crowdstrike-credentials
+  namespace: aspm-inventory
+type: Opaque
+stringData:
+  client-id: "your_client_id_here"
+  client-secret: "your_client_secret_here"
+```
+
+**Deployment:**
+```yaml
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aspm-service-inventory
+  namespace: aspm-inventory
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aspm-service-inventory
+  template:
+    metadata:
+      labels:
+        app: aspm-service-inventory
+    spec:
+      containers:
+      - name: aspm-inventory
+        image: ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
+        ports:
+        - containerPort: 8080
+        env:
+        - name: CROWDSTRIKE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: crowdstrike-credentials
+              key: client-id
+        - name: CROWDSTRIKE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: crowdstrike-credentials
+              key: client-secret
+        - name: PORT
+          value: "8080"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+```
+
+**Service:**
+```yaml
+# k8s/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aspm-service-inventory
+  namespace: aspm-inventory
+spec:
+  selector:
+    app: aspm-service-inventory
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
+```
+
+**Ingress (optional):**
+```yaml
+# k8s/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aspm-service-inventory
+  namespace: aspm-inventory
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: aspm-inventory.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: aspm-service-inventory
+            port:
+              number: 80
+```
+
+#### Helm Chart Deployment
+
+**Create Helm chart:**
+```bash
+# Create custom values file
+cat > values.yaml << EOF
+image:
+  repository: ghcr.io/mikedzikowski/aspm-api-inventory
+  tag: v1.0.0
+
+crowdstrike:
+  clientId: "your_client_id"
+  clientSecret: "your_client_secret"
+
+ingress:
+  enabled: true
+  host: aspm-inventory.yourdomain.com
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+EOF
+
+# Install with Helm
+helm install aspm-inventory ./helm/aspm-inventory -f values.yaml
+```
+
+#### OpenShift Deployment
+
+```bash
+# Create new project
+oc new-project aspm-inventory
+
+# Create secret
+oc create secret generic crowdstrike-credentials \
+  --from-literal=client-id="your_client_id" \
+  --from-literal=client-secret="your_client_secret"
+
+# Deploy application
+oc new-app ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0 \
+  --name=aspm-service-inventory
+
+# Set environment variables from secret
+oc set env deployment/aspm-service-inventory \
+  --from=secret/crowdstrike-credentials
+
+# Expose service
+oc expose svc/aspm-service-inventory
+```
+
+**Access**: `kubectl port-forward svc/aspm-service-inventory 8080:80` then http://localhost:8080
 
 ## 🔧 Configuration
 

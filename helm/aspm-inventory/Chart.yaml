@@ -1,0 +1,18 @@
+apiVersion: v2
+name: aspm-inventory
+description: ASPM Service Inventory - CrowdStrike ASPM API Web Interface
+type: application
+version: 1.0.0
+appVersion: "v1.0.0"
+home: https://github.com/mikedzikowski/cs-aspm-api-inventory-gui
+sources:
+  - https://github.com/mikedzikowski/cs-aspm-api-inventory-gui
+keywords:
+  - aspm
+  - crowdstrike
+  - security
+  - service-discovery
+maintainers:
+  - name: Mike Dzikowski
+annotations:
+  category: Security

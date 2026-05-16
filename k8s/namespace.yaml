@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aspm-inventory
+  labels:
+    name: aspm-inventory
+    app: aspm-service-inventory
