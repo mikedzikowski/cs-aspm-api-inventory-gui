@@ -1,0 +1,43 @@
+# ASPM Service Inventory - Secure Production Dockerfile
+# V1.0.0 Customer Release
+# NO COMPANY CERTIFICATES - Clean build for GitHub Actions
+
+FROM python:3.11-alpine
+
+# Security: Run as non-root user
+RUN adduser -D -s /bin/sh aspm
+
+# Install system dependencies (minimal, no certificates)
+RUN apk add --no-cache gcc musl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies (GitHub Actions has clean internet access)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY live_data_server_with_auth.py .
+
+# Create directories for logs and data
+RUN mkdir -p /app/logs && chown aspm:aspm /app/logs
+
+# Switch to non-root user
+USER aspm
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import socket; s = socket.socket(); s.connect(('localhost', 8080)); s.close()"
+
+# Expose port
+EXPOSE 8080
+
+# Environment variables (override at runtime)
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+
+# Security: No secrets or certificates in Docker image - credentials must be provided at runtime
+CMD ["python", "live_data_server_with_auth.py"]
