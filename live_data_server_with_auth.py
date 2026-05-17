@@ -2054,7 +2054,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                     "query": "in:services",
                     "params": {
                         "selectFields": {"fields": ["*"]},
-                        "paginate": {"limit": 50, "offset": 0}  # Get first 50 services
+                        "paginate": {"limit": 5, "offset": 0}  # PERFORMANCE FIX: Reduced from 50 to 5 services for immediate response
                     }
                 }
 
@@ -2109,41 +2109,23 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                     if exact_match or contains_target or target_contains_deployment:
                                         print(f"   🎯 MATCH! Service '{service_name}' found on deployment '{deployment.get('name')}'")
 
-                                        # Get detailed service info using the proven service query method
-                                        service_results = self.query_interfaces_for_service(token, service_name, base_url)
+                                        # PERFORMANCE FIX: Skip expensive interface query for now to prevent timeouts
+                                        # TODO: Optimize query_interfaces_for_service or make it conditional
+                                        print(f"   ⚡ Using basic service info (performance optimization)")
 
-                                        if service_results and len(service_results) > 0:
-                                            service_detail = service_results[0]
+                                        deployed_services[service_name] = {
+                                            "name": service_name,
+                                            "service_id": service.get("id"),
+                                            "technology": service.get("technology", "Unknown"),
+                                            "service_type": "Application",
+                                            "endpoints_count": 0,  # Will be populated when performance is optimized
+                                            "sample_endpoints": [],
+                                            "performance_note": "Detailed endpoints temporarily disabled for performance"
+                                        }
+                                        print(f"   ✅ Added service '{service_name}' (basic info for performance)")
 
-                                            deployed_services[service_name] = {
-                                                "name": service_name,
-                                                "service_id": service_detail.get("id", service.get("id")),
-                                                "technology": service_detail.get("technology", service.get("technology", "Unknown")),
-                                                "service_type": service_detail.get("service_type", "Application"),
-                                                "endpoints_count": len(service_detail.get("interfaces", [])),
-                                                "sample_endpoints": [
-                                                    {
-                                                        "path": iface.get("path", "/"),
-                                                        "method": iface.get("method", "GET"),
-                                                        "type": iface.get("type", "HTTP"),
-                                                        "technology": iface.get("technology", "REST"),
-                                                        "interface_id": iface.get("id")
-                                                    }
-                                                    for iface in service_detail.get("interfaces", [])[:5]  # First 5 endpoints
-                                                ]
-                                            }
-                                            print(f"   ✅ Added service '{service_name}' with {len(service_detail.get('interfaces', []))} endpoints")
-                                        else:
-                                            # Fallback: use basic service info if detailed query fails
-                                            deployed_services[service_name] = {
-                                                "name": service_name,
-                                                "service_id": service.get("id", "Unknown"),
-                                                "technology": service.get("technology", "Unknown"),
-                                                "service_type": "Application",
-                                                "endpoints_count": 0,
-                                                "sample_endpoints": []
-                                            }
-                                            print(f"   ✅ Added basic service '{service_name}' (detailed query failed)")
+                                        # Skip the expensive query_interfaces_for_service call
+                                        # service_results = self.query_interfaces_for_service(token, service_name, base_url)
 
                                         break  # Found match for this service, no need to check other deployments
                                     else:
