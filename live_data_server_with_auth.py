@@ -17,6 +17,8 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
     # Store session data (in production, use proper session management)
     sessions = {}
+    # Token cache with expiration to prevent repeated authentication
+    token_cache = {}
 
     def do_GET(self):
         """Handle GET requests"""
@@ -319,9 +321,10 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                     'login_time': datetime.now(timezone.utc).isoformat()
                 }
 
-                # Redirect to main app with session cookie
+                # Redirect to main app with session cookie (24 hour expiration)
                 self.send_response(302)
-                self.send_header('Set-Cookie', f'session_id={session_id}; Path=/; HttpOnly')
+                # Set cookie with Max-Age for 24 hours (86400 seconds)
+                self.send_header('Set-Cookie', f'session_id={session_id}; Path=/; HttpOnly; Max-Age=86400')
                 self.send_header('Location', '/')
                 self.end_headers()
             else:
@@ -1182,11 +1185,29 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Internal error: {e}"}, 500)
 
     def get_aspm_token(self, client_id, client_secret, base_url="https://api.crowdstrike.com"):
-        """Get ASPM authentication token using session credentials"""
+        """Get ASPM authentication token with caching to prevent repeated authentication"""
         try:
             if not client_id or not client_secret:
                 print("❌ Missing credentials from session")
                 return None
+
+            # Create cache key based on credentials
+            cache_key = f"{client_id}:{base_url}"
+
+            # Check if we have a valid cached token (tokens are valid for 30 minutes)
+            current_time = datetime.now(timezone.utc)
+            if cache_key in self.token_cache:
+                cached_data = self.token_cache[cache_key]
+                token_age = (current_time - cached_data['created_at']).total_seconds()
+
+                # Use cached token if it's less than 25 minutes old (5 min buffer before 30 min expiry)
+                if token_age < 1500:  # 25 minutes
+                    print(f"🔄 Using cached token (age: {int(token_age/60)}m)")
+                    return cached_data['token']
+                else:
+                    print(f"🔄 Token expired (age: {int(token_age/60)}m), refreshing...")
+                    # Remove expired token from cache
+                    del self.token_cache[cache_key]
 
             # Ensure base_url doesn't end with slash
             base_url = base_url.rstrip('/')
@@ -1198,12 +1219,27 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                 "grant_type": "client_credentials"
             }
 
+            print(f"🔑 Authenticating with CrowdStrike API...")
             response = requests.post(url, headers=headers, data=data, timeout=30)
             response.raise_for_status()
-            return response.json()["access_token"]
+
+            token = response.json()["access_token"]
+
+            # Cache the new token
+            self.token_cache[cache_key] = {
+                'token': token,
+                'created_at': current_time
+            }
+
+            print(f"✅ New token cached successfully")
+            return token
 
         except Exception as e:
             print(f"❌ Token authentication failed: {e}")
+            # Remove failed cache entry if it exists
+            cache_key = f"{client_id}:{base_url}" if client_id and base_url else None
+            if cache_key and cache_key in self.token_cache:
+                del self.token_cache[cache_key]
             return None
 
     # [Include all the original ASPM query methods here - truncated for brevity]
