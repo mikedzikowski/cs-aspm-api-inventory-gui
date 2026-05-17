@@ -26,6 +26,8 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
         if path == '/':
             self.serve_frontend()
+        elif path == '/health':
+            self.serve_health_check()
         elif path == '/login':
             self.serve_login_page()
         elif path == '/logout':
@@ -340,6 +342,23 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
         self.send_header('Set-Cookie', 'session_id=; Path=/; HttpOnly; Max-Age=0')
         self.send_header('Location', '/login')
         self.end_headers()
+
+    def serve_health_check(self):
+        """Serve health check endpoint for LoadBalancer probes - always returns HTTP 200 OK"""
+        import time
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+
+        health_data = {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "message": "ASPM Service Inventory is running",
+            "version": "v1.0.1"
+        }
+
+        self.wfile.write(json.dumps(health_data, indent=2).encode())
 
     def serve_frontend(self):
         """Serve the frontend HTML"""
