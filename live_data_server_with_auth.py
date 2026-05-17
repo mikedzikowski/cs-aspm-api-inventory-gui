@@ -446,11 +446,32 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                     <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
                         <h3 style="color: #58a6ff; margin: 0 0 15px 0; font-size: 1.1rem;">🔍 ASPM Search</h3>
 
+                        <!-- Search Type Selection -->
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 8px; color: #f0f6fc; font-weight: 500;">Search Type</label>
+                            <div style="display: flex; gap: 15px; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 8px; color: #f0f6fc; font-weight: 500; cursor: pointer;">
+                                    <input type="radio" name="searchType" value="service" checked style="margin: 0;" onchange="updateSearchInterface()">
+                                    🔌 Search Services/APIs
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; color: #f0f6fc; font-weight: 500; cursor: pointer;">
+                                    <input type="radio" name="searchType" value="host" style="margin: 0;" onchange="updateSearchInterface()">
+                                    🖥️ Search Hosts/Machines
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Search Input Field -->
                         <div style="margin-bottom: 20px;">
-                            <label for="searchInput" style="display: block; margin-bottom: 8px; color: #f0f6fc; font-weight: 500;">What do you want to find?</label>
+                            <label for="searchInput" id="searchLabel" style="display: block; margin-bottom: 8px; color: #f0f6fc; font-weight: 500;">Service/API Name</label>
                             <input type="text" id="searchInput" name="searchInput"
                                    style="width: 100%; padding: 12px; background: #0d1117; border: 2px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 1rem; box-sizing: border-box;"
-                                   placeholder="Enter service name (api.coindesk.com) or hostname (webserver01)">
+                                   placeholder="Enter service name (e.g., api.coindesk.com, payment-service)">
+
+                            <!-- Dynamic Help Text -->
+                            <div id="searchHelp" style="margin-top: 8px; padding: 8px; background: #0d1117; border-radius: 4px; font-size: 0.85rem; color: #8b949e; line-height: 1.4;">
+                                <strong style="color: #58a6ff;">Service Search:</strong> Find applications and APIs by name. Examples: "api.coindesk.com", "payment", "user-auth"
+                            </div>
                         </div>
 
                         <div style="margin-bottom: 20px;">
@@ -475,13 +496,14 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                             </div>
                         </div>
 
-                        <div style="background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 15px; margin-bottom: 20px;">
+                        <div style="background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 15px; margin-bottom: 20px;" id="searchTipsContainer">
                             <div style="color: #8b949e; font-size: 0.9rem; line-height: 1.4;">
-                                <strong style="color: #f0f6fc;">💡 Smart Search Tips:</strong><br>
-                                • <strong>Service/API:</strong> Try "payment", "api.coindesk.com", or "customer-service"<br>
-                                • <strong>Hostname:</strong> Try "webserver01", "aspm-discovery-vm", or "db-prod"<br>
-                                • <strong>Wildcards:</strong> Use partial names like "pay" to find all payment services<br>
-                                • <strong>Schema Filtering:</strong> Filter results by HTTP/HTTPS to find secure or insecure APIs
+                                <strong style="color: #f0f6fc;">💡 Search Examples:</strong><br>
+                                <span id="searchExamples">
+                                    • <strong>Popular Services:</strong> "api.coindesk.com", "payment", "user-auth", "customer-service"<br>
+                                    • <strong>Partial Matches:</strong> Use "pay" to find all payment-related services<br>
+                                    • <strong>API Names:</strong> Try service names, domain names, or application identifiers
+                                </span>
                             </div>
                         </div>
 
@@ -491,7 +513,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                 🚀 Search ASPM
                             </button>
                             <div id="searchType" style="color: #8b949e; font-size: 0.9rem; font-style: italic;">
-                                Will auto-detect: services or hosts
+                                Search Mode: 🔌 Services/APIs
                             </div>
                         </div>
                     </div>
@@ -501,8 +523,105 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             </div>
 
             <script>
+                window.pivotSearch = function(searchTerm, pivotType) {{
+                    const searchInput = document.getElementById('searchInput');
+                    searchInput.value = searchTerm;
+
+                    const serviceRadio = document.querySelector('input[name="searchType"][value="service"]');
+                    const hostRadio = document.querySelector('input[name="searchType"][value="host"]');
+
+                    if (pivotType === 'service') {{
+                        serviceRadio.checked = true;
+                    }} else {{
+                        hostRadio.checked = true;
+                    }}
+
+                    updateSearchInterface();
+
+                    const schemaFilter = document.querySelector('input[name="schemaFilter"]:checked').value;
+                    const searchData = {{
+                        [pivotType === 'host' ? 'hostName' : 'serviceName']: searchTerm,
+                        schemaFilter: schemaFilter
+                    }};
+
+                    const searchTypeDiv = document.getElementById('searchType');
+                    if (pivotType === 'host') {{
+                        searchTypeDiv.innerHTML = '🔄 Pivoting to host search for "' + searchTerm + '"';
+                        performSearch('/api/aspm/host-details', searchData, 'host');
+                    }} else {{
+                        searchTypeDiv.innerHTML = '🔄 Pivoting to service search for "' + searchTerm + '"';
+                        performSearch('/api/aspm/query', searchData, 'services');
+                    }}
+                }};
+
+                window.updateSearchInterface = function() {{
+                    const searchType = document.querySelector('input[name="searchType"]:checked').value;
+                    const searchLabel = document.getElementById('searchLabel');
+                    const searchInput = document.getElementById('searchInput');
+                    const searchHelp = document.getElementById('searchHelp');
+                    const searchTypeDiv = document.getElementById('searchType');
+                    const searchExamples = document.getElementById('searchExamples');
+
+                    if (searchType === 'service') {{
+                        searchLabel.textContent = 'Service/API Name';
+                        searchInput.placeholder = 'Enter service name (e.g., api.coindesk.com, payment-service)';
+                        searchHelp.innerHTML = '<strong style="color: #58a6ff;">Service Search:</strong> Find applications and APIs by name. Examples: "api.coindesk.com", "payment", "user-auth"';
+                        searchTypeDiv.innerHTML = 'Search Mode: 🔌 Services/APIs';
+                        searchExamples.innerHTML = `
+                            • <strong>Popular Services:</strong> "api.coindesk.com", "payment", "user-auth", "customer-service"<br>
+                            • <strong>Partial Matches:</strong> Use "pay" to find all payment-related services<br>
+                            • <strong>API Names:</strong> Try service names, domain names, or application identifiers
+                        `;
+                    }} else {{
+                        searchLabel.textContent = 'Hostname/Machine Name';
+                        searchInput.placeholder = 'Enter hostname (e.g., vm-market-tracker-ubuntu, webserver01)';
+                        searchHelp.innerHTML = '<strong style="color: #58a6ff;">Host Search:</strong> Find machines and hosts by name. Examples: "vm-market-tracker-ubuntu", "webserver01", "db-prod"';
+                        searchTypeDiv.innerHTML = 'Search Mode: 🖥️ Hosts/Machines';
+                        searchExamples.innerHTML = `
+                            • <strong>Host Names:</strong> "vm-market-tracker-ubuntu", "webserver01", "aspm-discovery-vm"<br>
+                            • <strong>Machine Types:</strong> Try names ending with "-vm", "-server", "-host", "-db"<br>
+                            • <strong>Partial Matches:</strong> Use "web" to find all web servers
+                        `;
+                    }}
+
+                    /* Clear previous search input when switching types */
+                    searchInput.value = '';
+                }};
+
+                /* Smart search function that uses explicit search type selection */
+                window.performSmartSearch = function(e) {{
+                    e.preventDefault();
+
+                    const searchInput = document.getElementById('searchInput').value.trim();
+                    if (!searchInput) {{
+                        alert('Please enter something to search for');
+                        return;
+                    }}
+
+                    // Get explicitly selected search type
+                    const searchType = document.querySelector('input[name="searchType"]:checked').value;
+                    const schemaFilter = document.querySelector('input[name="schemaFilter"]:checked').value;
+                    const searchTypeDiv = document.getElementById('searchType');
+
+                    // Prepare search data with schema filter
+                    const searchData = {{
+                        [searchType === 'host' ? 'hostName' : 'serviceName']: searchInput,
+                        schemaFilter: schemaFilter
+                    }};
+
+                    if (searchType === 'host') {{
+                        const filterText = schemaFilter !== 'all' ? ` (${{schemaFilter.toUpperCase()}} filters apply)` : '';
+                        searchTypeDiv.textContent = `🖥️ Searching for host "${{searchInput}}"${{filterText}}`;
+                        performSearch('/api/aspm/host-details', searchData, 'host');
+                    }} else {{
+                        const filterText = schemaFilter !== 'all' ? ` (${{schemaFilter.toUpperCase()}} only)` : '';
+                        searchTypeDiv.textContent = `🔍 Searching for service "${{searchInput}}"${{filterText}}`;
+                        performSearch('/api/aspm/query', searchData, 'services');
+                    }}
+                }};
+
                 // Smart search function that auto-detects search type and applies schema filter
-                window.performSmartSearch = async function(e) {{
+                window.performSmartSearch_OLD = async function(e) {{
                     e.preventDefault();
 
                     const searchInput = document.getElementById('searchInput').value.trim();
@@ -890,7 +1009,17 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
                 // Function to search for a specific service (used by clickable links)
                 window.searchSpecificService = function(serviceName) {{
+                    // Set the search input
                     document.getElementById('searchInput').value = serviceName;
+
+                    // Switch to service radio button
+                    const serviceRadio = document.querySelector('input[name="searchType"][value="service"]');
+                    if (serviceRadio) {{
+                        serviceRadio.checked = true;
+                        // Trigger the onchange event to update the interface
+                        updateSearchInterface();
+                    }}
+
                     const searchTypeDiv = document.getElementById('searchType');
                     searchTypeDiv.textContent = `🔍 Searching for service "${{serviceName}}"`;
                     performSmartSearch({{ preventDefault: () => {{}} }});
@@ -898,7 +1027,17 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
                 // Function to search for a specific host (used by deployment links)
                 window.searchHostByName = function(hostname) {{
+                    // Set the search input
                     document.getElementById('searchInput').value = hostname;
+
+                    // Switch to host radio button
+                    const hostRadio = document.querySelector('input[name="searchType"][value="host"]');
+                    if (hostRadio) {{
+                        hostRadio.checked = true;
+                        // Trigger the onchange event to update the interface
+                        updateSearchInterface();
+                    }}
+
                     const searchTypeDiv = document.getElementById('searchType');
                     searchTypeDiv.textContent = `🖥️ Searching for host "${{hostname}}"`;
                     // Trigger the smart search which will auto-detect as hostname
