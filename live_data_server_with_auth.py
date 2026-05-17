@@ -446,7 +446,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                         <div style="margin-bottom: 20px;">
                             <label for="searchInput" style="display: block; margin-bottom: 8px; color: #f0f6fc; font-weight: 500;">What do you want to find?</label>
                             <input type="text" id="searchInput" name="searchInput"
-                                   style="width: 100%; padding: 12px; background: #0d1117; border: 2px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 1rem;"
+                                   style="width: 100%; padding: 12px; background: #0d1117; border: 2px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 1rem; box-sizing: border-box;"
                                    placeholder="Enter service name (api.coindesk.com) or hostname (webserver01)">
                         </div>
 
@@ -605,9 +605,9 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                             body: JSON.stringify(data)
                         }});
 
-                        const responseData = await response.json();
-
+                        // Check if response is OK before parsing JSON
                         if (response.ok) {{
+                            const responseData = await response.json();
                             if (searchType === 'host') {{
                                 displayHostResults(responseData);
                             }} else {{
@@ -617,7 +617,17 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                             alert('Session expired. Please login again.');
                             window.location.href = '/login';
                         }} else {{
-                            results.innerHTML = '<div style="color: #f85149; padding: 20px;">❌ Error: ' + (responseData.error || 'Unknown error occurred') + '</div>';
+                            // Try to parse error response as JSON, fallback to text if not JSON
+                            let errorMessage = 'Unknown error occurred';
+                            try {{
+                                const responseData = await response.json();
+                                errorMessage = responseData.error || errorMessage;
+                            }} catch (jsonError) {{
+                                // Response is not JSON (likely HTML error page)
+                                const responseText = await response.text();
+                                errorMessage = `Server error (HTTP ${{response.status}})`;
+                            }}
+                            results.innerHTML = '<div style="color: #f85149; padding: 20px;">❌ Error: ' + errorMessage + '</div>';
                         }}
                     }} catch (error) {{
                         results.innerHTML = '<div style="color: #f85149; padding: 20px;">❌ Network Error: ' + error.message + '</div>';

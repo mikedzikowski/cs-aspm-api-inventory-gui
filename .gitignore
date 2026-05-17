@@ -112,6 +112,16 @@ docs/.doctrees/
 *.tfstate
 *.tfstate.*
 
+# Performance Analysis Documents (generated, not source code)
+PERFORMANCE_ANALYSIS.md
+OPTIMIZATION_CODE_EXAMPLES.md
+PERFORMANCE_QUICK_REFERENCE.md
+PERFORMANCE_ANALYSIS_INDEX.md
+
+# Cookie files (temporary authentication files)
+*.txt
+cookies*.txt
+
 # Keep these directories but ignore contents
 !backend/app/
 !frontend/src/
