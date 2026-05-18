@@ -19,8 +19,8 @@ COPY requirements.txt .
 # Install Python dependencies (GitHub Actions has clean internet access)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY live_data_server_with_auth.py .
+# Copy application code - ENHANCED VERSION with ServiceNow integration
+COPY live_data_server_enhanced_with_servicenow.py .
 
 # Create directories for logs and data
 RUN mkdir -p /app/logs && chown aspm:aspm /app/logs
@@ -40,4 +40,4 @@ ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
 
 # Security: No secrets or certificates in Docker image - credentials must be provided at runtime
-CMD ["python", "live_data_server_with_auth.py"]
+CMD ["python", "live_data_server_enhanced_with_servicenow.py"]

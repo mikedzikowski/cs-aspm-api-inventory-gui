@@ -50,6 +50,18 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             self.handle_service_query()
         elif self.path == '/api/aspm/host-details':
             self.handle_host_details_query()
+        elif self.path == '/api/servicenow/export-service':
+            self.handle_servicenow_export_service()
+        elif self.path == '/api/servicenow/export-incident':
+            self.handle_servicenow_export_incident()
+        elif self.path == '/api/servicenow/export-integration':
+            self.handle_servicenow_export_integration()
+        elif self.path == '/api/servicenow/export-host-cmdb':
+            self.handle_servicenow_export_host_cmdb()
+        elif self.path == '/api/servicenow/export-host-incident':
+            self.handle_servicenow_export_host_incident()
+        elif self.path == '/api/servicenow/export-host-integration':
+            self.handle_servicenow_export_host_integration()
         else:
             self.send_error(404, "Not Found")
 
@@ -429,6 +441,14 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                 .service-item {{ background: #0d1117; padding: 10px; margin: 5px 0; border-radius: 4px; border: 1px solid #21262d; }}
                 .service-item-header {{ display: flex; justify-content: space-between; align-items: center; }}
                 .service-endpoints {{ margin-top: 8px; color: #8b949e; font-size: 0.9rem; }}
+                .export-section {{ background: #0f1419; border: 1px solid #21262d; border-radius: 6px; padding: 15px; margin-top: 15px; }}
+                .export-buttons {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+                .export-btn {{ background: #1f6feb; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }}
+                .export-btn:hover {{ background: #2ea043; }}
+                .export-btn.incident {{ background: #d73a49; }}
+                .export-btn.incident:hover {{ background: #f14e60; }}
+                .export-btn.integration {{ background: #6f42c1; }}
+                .export-btn.integration:hover {{ background: #8b5cf6; }}
             </style>
         </head>
         <body>
@@ -898,6 +918,19 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                     ` : ''}}
                                 </div>
                                 ` : ''}}
+
+                                <!-- JSON Export Section -->
+                                <div class="export-section">
+                                    <h5 style="color: #58a6ff; margin-bottom: 10px;">📤 JSON Export</h5>
+                                    <div class="export-buttons">
+                                        <button class="export-btn" onclick="exportServiceNow('cmdb', ${{index}})">📋 CMDB CI</button>
+                                        <button class="export-btn incident" onclick="exportServiceNow('incident', ${{index}})">🚨 Incident</button>
+                                        <button class="export-btn integration" onclick="exportServiceNow('integration', ${{index}})">🔗 Integration</button>
+                                    </div>
+                                    <div style="color: #8b949e; font-size: 0.8rem; margin-top: 8px;">
+                                        Export service data as structured JSON
+                                    </div>
+                                </div>
                             </div>
                         `;
                     }});
@@ -1001,6 +1034,19 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                 </ul>
                             </div>
                             `}}
+
+                            <!-- JSON Host Export Section -->
+                            <div class="export-section">
+                                <h5 style="color: #58a6ff; margin-bottom: 10px;">📤 JSON Host Export</h5>
+                                <div class="export-buttons">
+                                    <button class="export-btn" onclick="exportHostServiceNow('cmdb')">📋 Host CMDB CI</button>
+                                    <button class="export-btn incident" onclick="exportHostServiceNow('incident')">🚨 Host Incident</button>
+                                    <button class="export-btn integration" onclick="exportHostServiceNow('integration')">🔗 Host Integration</button>
+                                </div>
+                                <div style="color: #8b949e; font-size: 0.8rem; margin-top: 8px;">
+                                    Export complete host details as structured JSON
+                                </div>
+                            </div>
                         </div>
                     `;
 
@@ -1059,6 +1105,157 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                         const hiddenCount = hiddenSection.children.length;
                         expandText.textContent = `▼ Show ${{hiddenCount}} More Interfaces`;
                     }}
+                }};
+
+                // Global variables to store current data for exports
+                let currentServices = [];
+                let currentHostData = null;
+                let currentDeployedServices = [];
+
+                // ServiceNow/JSON export functions for services
+                window.exportServiceNow = function(exportType, serviceIndex) {{
+                    if (!currentServices[serviceIndex]) {{
+                        alert('Service data not available for export');
+                        return;
+                    }}
+
+                    const service = currentServices[serviceIndex];
+                    const endpoint = `/api/servicenow/export-${{exportType === 'cmdb' ? 'service' : exportType}}`;
+
+                    fetch(endpoint, {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                        }},
+                        body: JSON.stringify({{
+                            serviceData: service
+                        }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            showExportModal(data.json, `${{exportType.toUpperCase()}} Export for ${{service.name}}`);
+                        }} else {{
+                            alert('Export failed: ' + (data.error || 'Unknown error'));
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error('Export error:', error);
+                        alert('Export failed: ' + error.message);
+                    }});
+                }};
+
+                // ServiceNow/JSON export functions for hosts
+                window.exportHostServiceNow = function(exportType) {{
+                    if (!currentHostData) {{
+                        alert('Host data not available for export');
+                        return;
+                    }}
+
+                    const endpoint = `/api/servicenow/export-host-${{exportType}}`;
+
+                    fetch(endpoint, {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                        }},
+                        body: JSON.stringify({{
+                            hostData: currentHostData,
+                            deployedServices: currentDeployedServices,
+                            severity: exportType === 'incident' ? 'Medium' : undefined
+                        }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            showExportModal(data.json, `Host ${{exportType.toUpperCase()}} Export for ${{currentHostData.hostname}}`);
+                        }} else {{
+                            alert('Export failed: ' + (data.error || 'Unknown error'));
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error('Export error:', error);
+                        alert('Export failed: ' + error.message);
+                    }});
+                }};
+
+                // Function to show export results in a modal
+                function showExportModal(jsonData, title) {{
+                    const modal = document.createElement('div');
+                    modal.style.cssText = `
+                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                        background: rgba(0,0,0,0.8); z-index: 1000; display: flex;
+                        align-items: center; justify-content: center; padding: 20px;
+                    `;
+
+                    const content = document.createElement('div');
+                    content.style.cssText = `
+                        background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+                        padding: 20px; max-width: 90%; max-height: 90%; overflow: auto;
+                        color: #c9d1d9; font-family: monospace;
+                    `;
+
+                    content.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0; color: #58a6ff;">${{title}}</h3>
+                            <button onclick="this.closest('[style*=fixed]').remove()"
+                                    style="background: #da3633; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                                ✕ Close
+                            </button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="copyToClipboard(this.dataset.json)" data-json='${{JSON.stringify(jsonData)}}'
+                                    style="background: #238636; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">
+                                📋 Copy JSON
+                            </button>
+                            <button onclick="downloadJson(this.dataset.json, '${{title.replace(/[^a-zA-Z0-9]/g, '_')}}.json')" data-json='${{JSON.stringify(jsonData)}}'
+                                    style="background: #1f6feb; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">
+                                💾 Download JSON
+                            </button>
+                        </div>
+                        <pre style="background: #161b22; padding: 15px; border-radius: 4px; overflow: auto; white-space: pre-wrap;">
+${{JSON.stringify(jsonData, null, 2)}}
+                        </pre>
+                    `;
+
+                    modal.appendChild(content);
+                    document.body.appendChild(modal);
+                }}
+
+                // Helper functions for export modal
+                window.copyToClipboard = function(jsonStr) {{
+                    navigator.clipboard.writeText(jsonStr).then(() => {{
+                        alert('JSON copied to clipboard!');
+                    }}).catch(err => {{
+                        console.error('Could not copy text: ', err);
+                        alert('Failed to copy to clipboard');
+                    }});
+                }};
+
+                window.downloadJson = function(jsonStr, filename) {{
+                    const blob = new Blob([jsonStr], {{ type: 'application/json' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }};
+
+                // Modify existing display functions to store data for exports
+                const originalDisplayServiceResults = displayServiceResults;
+                displayServiceResults = function(data) {{
+                    currentServices = data.services || [];
+                    originalDisplayServiceResults(data);
+                }};
+
+                const originalDisplayHostResults = displayHostResults;
+                displayHostResults = function(data) {{
+                    currentHostData = data.host || null;
+                    currentDeployedServices = data.deployed_services || [];
+                    originalDisplayHostResults(data);
                 }};
             </script>
         </body>
@@ -2193,7 +2390,7 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                     "query": "in:services",
                     "params": {
                         "selectFields": {"fields": ["*"]},
-                        "paginate": {"limit": 5, "offset": 0}  # PERFORMANCE FIX: Reduced from 50 to 5 services for immediate response
+                        "paginate": {"limit": 50, "offset": 0}  # Get first 50 services
                     }
                 }
 
@@ -2248,23 +2445,41 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                     if exact_match or contains_target or target_contains_deployment:
                                         print(f"   🎯 MATCH! Service '{service_name}' found on deployment '{deployment.get('name')}'")
 
-                                        # PERFORMANCE FIX: Skip expensive interface query for now to prevent timeouts
-                                        # TODO: Optimize query_interfaces_for_service or make it conditional
-                                        print(f"   ⚡ Using basic service info (performance optimization)")
+                                        # Get detailed service info using the proven service query method
+                                        service_results = self.query_interfaces_for_service(token, service_name, base_url)
 
-                                        deployed_services[service_name] = {
-                                            "name": service_name,
-                                            "service_id": service.get("id"),
-                                            "technology": service.get("technology", "Unknown"),
-                                            "service_type": "Application",
-                                            "endpoints_count": 0,  # Will be populated when performance is optimized
-                                            "sample_endpoints": [],
-                                            "performance_note": "Detailed endpoints temporarily disabled for performance"
-                                        }
-                                        print(f"   ✅ Added service '{service_name}' (basic info for performance)")
+                                        if service_results and len(service_results) > 0:
+                                            service_detail = service_results[0]
 
-                                        # Skip the expensive query_interfaces_for_service call
-                                        # service_results = self.query_interfaces_for_service(token, service_name, base_url)
+                                            deployed_services[service_name] = {
+                                                "name": service_name,
+                                                "service_id": service_detail.get("id", service.get("id")),
+                                                "technology": service_detail.get("technology", service.get("technology", "Unknown")),
+                                                "service_type": service_detail.get("service_type", "Application"),
+                                                "endpoints_count": len(service_detail.get("interfaces", [])),
+                                                "sample_endpoints": [
+                                                    {
+                                                        "path": iface.get("path", "/"),
+                                                        "method": iface.get("method", "GET"),
+                                                        "type": iface.get("type", "HTTP"),
+                                                        "technology": iface.get("technology", "REST"),
+                                                        "interface_id": iface.get("id")
+                                                    }
+                                                    for iface in service_detail.get("interfaces", [])[:5]  # First 5 endpoints
+                                                ]
+                                            }
+                                            print(f"   ✅ Added service '{service_name}' with {len(service_detail.get('interfaces', []))} endpoints")
+                                        else:
+                                            # Fallback: use basic service info if detailed query fails
+                                            deployed_services[service_name] = {
+                                                "name": service_name,
+                                                "service_id": service.get("id", "Unknown"),
+                                                "technology": service.get("technology", "Unknown"),
+                                                "service_type": "Application",
+                                                "endpoints_count": 0,
+                                                "sample_endpoints": []
+                                            }
+                                            print(f"   ✅ Added basic service '{service_name}' (detailed query failed)")
 
                                         break  # Found match for this service, no need to check other deployments
                                     else:
@@ -2427,6 +2642,649 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode())
+
+    def build_servicenow_cmdb_json(self, service_data, integration_config, host_details=None):
+        """Build ServiceNow CMDB CI JSON from service data"""
+        base_json = {
+            "name": service_data.get('name', 'Unknown Service'),
+            "ci_class": "cmdb_ci_service",
+            "operational_status": "1",  # Operational
+            "sys_class_name": "cmdb_ci_service",
+            "short_description": f"ASPM discovered service: {service_data.get('name')}",
+            "discovery_source": "CrowdStrike ASPM",
+            "u_aspm_service_id": str(service_data.get('id', '')),
+            "u_risk_score": str(service_data.get('riskScore', 0)),
+            "u_risk_severity": service_data.get('riskSeverity', 'Unknown'),
+            "u_technology": service_data.get('technology', 'Unknown'),
+            "u_service_type": service_data.get('type', 'Unknown'),
+            "u_deployment_hosts": service_data.get('deployment_hosts', []),
+            "u_endpoints": [ep.get('path', '') for ep in service_data.get('endpoints', [])],
+            "u_persistent_signature": service_data.get('persistentSignature', ''),
+            "install_status": "1"
+        }
+
+        # Add comprehensive host details if provided
+        if host_details:
+            base_json.update({
+                "u_hostname": host_details.get('hostname', ''),
+                "u_ip_address": ', '.join(host_details.get('local_ip', [])),
+                "u_external_ip": host_details.get('external_ip', ''),
+                "u_mac_address": host_details.get('mac_address', ''),
+                "u_os_version": host_details.get('os_version', ''),
+                "u_platform_name": host_details.get('platform_name', ''),
+                "u_agent_version": host_details.get('agent_version', ''),
+                "u_last_seen": host_details.get('last_seen', ''),
+                "u_device_id": host_details.get('device_id', ''),
+                "u_machine_domain": host_details.get('machine_domain', ''),
+                "u_system_manufacturer": host_details.get('system_manufacturer', ''),
+                "u_system_product_name": host_details.get('system_product_name', ''),
+                "u_bios_manufacturer": host_details.get('bios_manufacturer', ''),
+                "u_bios_version": host_details.get('bios_version', ''),
+                "u_cpu_signature": host_details.get('cpu_signature', ''),
+                "u_ou": ', '.join(host_details.get('ou', [])),
+                "u_tags": ', '.join(host_details.get('tags', [])),
+                "u_groups": ', '.join(host_details.get('groups', [])),
+                "u_policies": ', '.join(host_details.get('policies', [])),
+                "ci_class": "cmdb_ci_computer"  # Change CI class for host records
+            })
+
+        return base_json
+
+    def build_servicenow_host_cmdb_json(self, host_data, deployed_services=None):
+        """Build ServiceNow CMDB CI JSON specifically for host data"""
+        base_json = {
+            "name": host_data.get('hostname', 'Unknown Host'),
+            "ci_class": "cmdb_ci_computer",
+            "operational_status": "1",  # Operational
+            "sys_class_name": "cmdb_ci_computer",
+            "short_description": f"CrowdStrike managed host: {host_data.get('hostname')}",
+            "discovery_source": "CrowdStrike Falcon",
+            "ip_address": host_data.get('ip_address', ''),  # Use single IP field
+            "host_name": host_data.get('hostname', ''),
+            "dns_domain": host_data.get('machine_domain', ''),
+            "os": host_data.get('os_type', ''),  # Corrected field mapping
+            "os_version": host_data.get('os_type', ''),  # Use os_type for both
+            "manufacturer": host_data.get('system_manufacturer', ''),
+            "model_id": host_data.get('system_product_name', ''),
+            "serial_number": host_data.get('serial_number', ''),
+            "mac_address": host_data.get('mac_address', ''),
+            "install_status": "1",
+            # Custom CrowdStrike fields with corrected mappings
+            "u_device_id": host_data.get('device_id', ''),
+            "u_external_ip": host_data.get('external_ip', ''),
+            "u_platform_name": host_data.get('platform', ''),  # Corrected field name
+            "u_agent_version": host_data.get('agent_version', ''),
+            "u_last_seen": host_data.get('last_seen', ''),
+            "u_first_seen": host_data.get('first_seen', ''),  # Add first seen
+            "u_deployment_id": host_data.get('deployment_id', ''),  # Add deployment ID
+            "u_signature": host_data.get('signature', ''),  # Add signature
+            "u_host_type": host_data.get('type', ''),  # Add host type
+            "u_host_status": host_data.get('status', ''),  # Add host status
+            "u_last_login_user": host_data.get('last_login_user', ''),  # Add last login user
+            "u_bios_manufacturer": host_data.get('bios_manufacturer', ''),
+            "u_bios_version": host_data.get('bios_version', ''),
+            "u_cpu_signature": host_data.get('cpu_signature', ''),
+            "u_ou": ', '.join(host_data.get('ou', [])) if host_data.get('ou') else '',
+            "u_tags": ', '.join(host_data.get('tags', [])) if host_data.get('tags') else '',
+            "u_groups": ', '.join(host_data.get('groups', [])) if host_data.get('groups') else '',
+            "u_policies": ', '.join(host_data.get('policies', [])) if host_data.get('policies') else '',
+            "u_config_id_build": host_data.get('config_id_build', ''),
+            "u_config_id_platform": host_data.get('config_id_platform', ''),
+            "u_pointer_size": str(host_data.get('pointer_size', '')),
+            "u_reduced_functionality_mode": host_data.get('reduced_functionality_mode', ''),
+            "u_provision_status": host_data.get('provision_status', '')
+        }
+
+        # Add ASPM-discovered applications/services deployed on this host
+        if deployed_services:
+            base_json["u_deployed_applications"] = [
+                {
+                    "name": svc.get('name', ''),
+                    "service_id": svc.get('service_id', ''),
+                    "technology": svc.get('technology', ''),
+                    "service_type": svc.get('service_type', ''),
+                    "endpoints_count": svc.get('endpoints_count', 0),
+                    "sample_endpoints": svc.get('sample_endpoints', [])
+                } for svc in deployed_services
+            ]
+            base_json["u_deployed_applications_count"] = len(deployed_services)
+            base_json["u_deployed_applications_names"] = ', '.join([svc.get('name', '') for svc in deployed_services])
+
+        return base_json
+
+    def build_servicenow_incident_json(self, service_data, integration_config, host_details=None):
+        """Build ServiceNow Incident JSON from service data"""
+        risk_score = service_data.get('riskScore', 0)
+        risk_severity = service_data.get('riskSeverity', 'Unknown')
+        priority_map = {'Critical': '1', 'High': '2', 'Medium': '3', 'Low': '4', 'Unknown': '4'}
+        priority = priority_map.get(risk_severity, '4')
+
+        base_incident = {
+            "caller_id": "asmp_integration",
+            "category": "Security",
+            "subcategory": "Application Security",
+            "short_description": f"Security finding for {service_data.get('name')}",
+            "description": f"CrowdStrike ASPM detected {risk_severity} risk (score: {risk_score}) for {service_data.get('technology', 'Unknown')} service '{service_data.get('name')}'",
+            "priority": priority,
+            "urgency": priority,
+            "impact": "2",
+            "assignment_group": "security_team",
+            "configuration_item": service_data.get('name'),
+            "u_source": "CrowdStrike ASPM",
+            "u_risk_score": str(risk_score),
+            "u_risk_severity": risk_severity,
+            "u_affected_endpoints": [ep.get('path', '') for ep in service_data.get('endpoints', [])],
+            "u_deployment_hosts": service_data.get('deployment_hosts', []),
+            "u_technology": service_data.get('technology', 'Unknown')
+        }
+
+        # Add host-specific information if available
+        if host_details:
+            base_incident.update({
+                "u_affected_hostname": host_details.get('hostname', ''),
+                "u_affected_ip_addresses": ', '.join(host_details.get('local_ip', [])),
+                "u_affected_os": host_details.get('os_version', ''),
+                "u_affected_platform": host_details.get('platform_name', ''),
+                "u_device_id": host_details.get('device_id', ''),
+                "u_machine_domain": host_details.get('machine_domain', ''),
+                "u_last_seen": host_details.get('last_seen', ''),
+                "description": f"CrowdStrike ASPM detected {risk_severity} risk (score: {risk_score}) for service '{service_data.get('name')}' on host {host_details.get('hostname', 'Unknown')} ({', '.join(host_details.get('local_ip', []))})"
+            })
+
+        return base_incident
+
+    def build_servicenow_host_incident_json(self, host_data, severity="Medium"):
+        """Build ServiceNow Incident JSON specifically for host security issues"""
+        priority_map = {'Critical': '1', 'High': '2', 'Medium': '3', 'Low': '4'}
+        priority = priority_map.get(severity, '3')
+
+        return {
+            "caller_id": "falcon_integration",
+            "category": "Security",
+            "subcategory": "Endpoint Security",
+            "short_description": f"Host security review for {host_data.get('hostname')}",
+            "description": f"CrowdStrike Falcon managed host {host_data.get('hostname')} requires security review. Host details: OS: {host_data.get('os_version', 'Unknown')}, Platform: {host_data.get('platform_name', 'Unknown')}, Last seen: {host_data.get('last_seen', 'Unknown')}",
+            "priority": priority,
+            "urgency": priority,
+            "impact": "2",
+            "assignment_group": "security_team",
+            "configuration_item": host_data.get('hostname'),
+            "u_source": "CrowdStrike Falcon",
+            "u_device_id": host_data.get('device_id', ''),
+            "u_hostname": host_data.get('hostname', ''),
+            "u_ip_addresses": ', '.join(host_data.get('local_ip', [])),
+            "u_external_ip": host_data.get('external_ip', ''),
+            "u_os_version": host_data.get('os_version', ''),
+            "u_platform_name": host_data.get('platform_name', ''),
+            "u_machine_domain": host_data.get('machine_domain', ''),
+            "u_agent_version": host_data.get('agent_version', ''),
+            "u_last_seen": host_data.get('last_seen', ''),
+            "u_tags": ', '.join(host_data.get('tags', [])),
+            "u_groups": ', '.join(host_data.get('groups', [])),
+            "u_policies": ', '.join(host_data.get('policies', []))
+        }
+
+    def build_integration_payload(self, service_data, integration_config, host_details=None):
+        """Build complete integration payload with optional host context"""
+        payload = {
+            "integration_type": "servicenow",
+            "action": "sync_service",
+            "timestamp": datetime.now().isoformat(),
+            "service_data": {
+                "name": service_data.get('name'),
+                "asmp_service_id": str(service_data.get('id', '')),
+                "type": service_data.get('type', 'Unknown'),
+                "risk_score": service_data.get('riskScore', 0),
+                "risk_severity": service_data.get('riskSeverity', 'Unknown'),
+                "technology": service_data.get('technology', 'Unknown'),
+                "persistent_signature": service_data.get('persistentSignature', ''),
+                "interfaces": service_data.get('endpoints', []),
+                "deployment_hosts": service_data.get('deployment_hosts', [])
+            },
+            "integration_config": integration_config
+        }
+
+        # Add host context if available
+        if host_details:
+            payload["host_context"] = {
+                "hostname": host_details.get('hostname', ''),
+                "ip_address": host_details.get('ip_address', ''),
+                "external_ip": host_details.get('external_ip', ''),
+                "platform": host_details.get('platform', ''),
+                "os_type": host_details.get('os_type', ''),
+                "agent_version": host_details.get('agent_version', ''),
+                "last_seen": host_details.get('last_seen', ''),
+                "status": host_details.get('status', ''),
+                "system_manufacturer": host_details.get('system_manufacturer', '')
+            }
+
+        return payload
+
+    def get_host_details_for_service(self, hostname, session_data):
+        """Get host details from Falcon API for service export context"""
+        try:
+            if not hostname:
+                return None
+
+            print(f"🔍 Getting host details for service export: {hostname}")
+
+            # Get credentials from session
+            base_url = session_data.get('base_url', 'https://api.crowdstrike.com')
+            client_id = session_data.get('client_id')
+            client_secret = session_data.get('client_secret')
+
+            if not client_id or not client_secret:
+                return None
+
+            # Get access token
+            token_data = self.get_access_token(client_id, client_secret, base_url)
+            if not token_data:
+                return None
+
+            access_token = token_data.get('access_token')
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            # Search for devices by hostname
+            host_ids_url = f'{base_url}/devices/queries/devices/v1'
+            response = requests.get(host_ids_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            device_ids = result.get('resources', [])
+
+            # Get device details in batches to find our hostname
+            device_details_url = f'{base_url}/devices/entities/devices/v2'
+            batch_size = 100
+            hostname_lower = hostname.lower()
+
+            for i in range(0, len(device_ids), batch_size):
+                batch_ids = device_ids[i:i + batch_size]
+                payload = {'ids': batch_ids}
+                details_response = requests.post(device_details_url, headers=headers, json=payload, timeout=30)
+
+                if details_response.status_code == 200:
+                    details_result = details_response.json()
+                    devices = details_result.get('resources', [])
+
+                    # Search for our hostname
+                    for device in devices:
+                        device_hostname = device.get('hostname', '').lower()
+                        if device_hostname == hostname_lower:
+                            print(f"✅ Found host details for {hostname}")
+                            # Transform to match the expected format
+                            return {
+                                'hostname': device.get('hostname', ''),
+                                'ip_address': device.get('local_ip', ''),
+                                'external_ip': device.get('external_ip', ''),
+                                'mac_address': device.get('mac_address', ''),
+                                'os_type': device.get('os_version', ''),
+                                'platform': device.get('platform_name', ''),
+                                'agent_version': device.get('agent_version', ''),
+                                'last_seen': device.get('last_seen', ''),
+                                'first_seen': device.get('first_seen', ''),
+                                'device_id': device.get('device_id', ''),
+                                'deployment_id': device.get('cid', ''),
+                                'signature': device.get('machine_domain', ''),
+                                'type': 'Machine',
+                                'status': device.get('status', ''),
+                                'last_login_user': device.get('last_login_user', ''),
+                                'bios_version': device.get('bios_version', ''),
+                                'system_manufacturer': device.get('system_manufacturer', ''),
+                                'system_product_name': device.get('system_product_name', ''),
+                                'bios_manufacturer': device.get('bios_manufacturer', ''),
+                                'cpu_signature': device.get('cpu_signature', ''),
+                                'machine_domain': device.get('machine_domain', ''),
+                                'ou': device.get('ou', []),
+                                'tags': device.get('tags', []),
+                                'groups': device.get('groups', []),
+                                'policies': device.get('policies', [])
+                            }
+
+            print(f"❌ Host {hostname} not found in Falcon")
+            return None
+
+        except Exception as e:
+            print(f"❌ Error getting host details for {hostname}: {str(e)}")
+            return None
+
+    def handle_servicenow_export_service(self):
+        """Handle ServiceNow CMDB CI export with host context"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            service_data = request_data.get('serviceData', {})
+            service_name = request_data.get('serviceName', '')
+
+            print(f"🔍 ENHANCED EXPORT DEBUG: serviceName='{service_name}', serviceData keys: {list(service_data.keys())}")
+
+            # If no serviceData provided, we need to fetch it from ASPM
+            if not service_data and service_name:
+                print(f"🔍 No serviceData provided, fetching service details for: {service_name}")
+                # Get fresh service data from ASPM to access raw deployment information
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    # Use the query_services method to get full service data
+                    try:
+                        services = self.query_services(service_name, session_data)
+                        if services:
+                            service_data = services[0]  # Use first match
+                            print(f"✅ Fetched service data for '{service_name}', keys: {list(service_data.keys())}")
+                        else:
+                            print(f"❌ Could not find service data for '{service_name}'")
+                    except Exception as e:
+                        print(f"❌ Error fetching service data: {e}")
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            print(f"🔍 Checking deployment data in service_data...")
+            print(f"🔍 deployment_hosts: {service_data.get('deployment_hosts', 'NOT_FOUND')}")
+            print(f"🔍 deployments: {service_data.get('deployments', 'NOT_FOUND')}")
+
+            # Try deployment_hosts first (string array) - but handle empty arrays
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0 and deployment_hosts[0]:
+                primary_host = deployment_hosts[0]  # Use first host if not empty string
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                print(f"🔍 Checking deployments array: {len(deployments)} deployments found")
+                if deployments and len(deployments) > 0:
+                    first_deployment = deployments[0]
+                    if isinstance(first_deployment, dict):
+                        primary_host = first_deployment.get('hostname')  # Extract hostname from first deployment
+                        print(f"🔍 Using host from deployments array: {primary_host}")
+                    else:
+                        print(f"🔍 First deployment is not a dict: {type(first_deployment)}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced service export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for service {service_data.get('name', service_name)}")
+
+            cmdb_json = self.build_servicenow_cmdb_json(service_data, {}, host_details)
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_cmdb_ci",
+                "service_name": service_data.get('name', ''),
+                "json": cmdb_json,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Export failed: {str(e)}")
+
+    def handle_servicenow_export_incident(self):
+        """Handle ServiceNow Incident export with host context"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            service_data = request_data.get('serviceData', {})
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            # Try deployment_hosts first (string array)
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0:
+                primary_host = deployment_hosts[0]  # Use first host
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                if deployments and len(deployments) > 0:
+                    primary_host = deployments[0].get('hostname')  # Extract hostname from first deployment
+                    print(f"🔍 Using host from deployments array: {primary_host}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced incident export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for incident export: {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for incident export of service {service_data.get('name', 'unknown')}")
+
+            incident_json = self.build_servicenow_incident_json(service_data, {}, host_details)
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_incident",
+                "service_name": service_data.get('name', ''),
+                "json": incident_json,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Export failed: {str(e)}")
+
+    def handle_servicenow_export_integration(self):
+        """Handle complete ServiceNow integration payload export with host context"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            service_data = request_data.get('serviceData', {})
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            # Try deployment_hosts first (string array)
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0:
+                primary_host = deployment_hosts[0]  # Use first host
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                if deployments and len(deployments) > 0:
+                    primary_host = deployments[0].get('hostname')  # Extract hostname from first deployment
+                    print(f"🔍 Using host from deployments array: {primary_host}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced integration export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for integration export: {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for integration export of service {service_data.get('name', 'unknown')}")
+
+            integration_payload = self.build_integration_payload(service_data, {}, host_details)
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_integration",
+                "service_name": service_data.get('name', ''),
+                "json": integration_payload,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Export failed: {str(e)}")
+
+    def handle_servicenow_export_host_cmdb(self):
+        """Handle ServiceNow CMDB CI export for hosts with complete Falcon data"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            host_data = request_data.get('hostData', {})
+            deployed_services = request_data.get('deployedServices', [])
+
+            cmdb_json = self.build_servicenow_host_cmdb_json(host_data, deployed_services)
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_host_cmdb_ci",
+                "hostname": host_data.get('hostname', ''),
+                "json": cmdb_json,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Host CMDB export failed: {str(e)}")
+
+    def handle_servicenow_export_host_incident(self):
+        """Handle ServiceNow Incident export for hosts"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            host_data = request_data.get('hostData', {})
+            severity = request_data.get('severity', 'Medium')
+            incident_json = self.build_servicenow_host_incident_json(host_data, severity)
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_host_incident",
+                "hostname": host_data.get('hostname', ''),
+                "json": incident_json,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Host incident export failed: {str(e)}")
+
+    def handle_servicenow_export_host_integration(self):
+        """Handle complete ServiceNow integration payload export for hosts"""
+        if not self.is_authenticated():
+            self.send_error(401, "Unauthorized")
+            return
+
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+
+            host_data = request_data.get('hostData', {})
+
+            # Build host-focused integration payload
+            integration_payload = {
+                "integration_type": "servicenow_host",
+                "action": "sync_host",
+                "timestamp": datetime.now().isoformat(),
+                "host_data": {
+                    "hostname": host_data.get('hostname'),
+                    "device_id": host_data.get('device_id'),
+                    "ip_addresses": host_data.get('local_ip', []),
+                    "external_ip": host_data.get('external_ip', ''),
+                    "os_version": host_data.get('os_version', ''),
+                    "platform_name": host_data.get('platform_name', ''),
+                    "agent_version": host_data.get('agent_version', ''),
+                    "last_seen": host_data.get('last_seen', ''),
+                    "machine_domain": host_data.get('machine_domain', ''),
+                    "system_info": {
+                        "manufacturer": host_data.get('system_manufacturer', ''),
+                        "product_name": host_data.get('system_product_name', ''),
+                        "serial_number": host_data.get('serial_number', ''),
+                        "bios_manufacturer": host_data.get('bios_manufacturer', ''),
+                        "bios_version": host_data.get('bios_version', ''),
+                        "cpu_signature": host_data.get('cpu_signature', ''),
+                        "pointer_size": host_data.get('pointer_size', '')
+                    },
+                    "management_info": {
+                        "tags": host_data.get('tags', []),
+                        "groups": host_data.get('groups', []),
+                        "policies": host_data.get('policies', []),
+                        "ou": host_data.get('ou', []),
+                        "provision_status": host_data.get('provision_status', ''),
+                        "reduced_functionality_mode": host_data.get('reduced_functionality_mode', '')
+                    }
+                }
+            }
+
+            response_data = {
+                "success": True,
+                "export_type": "servicenow_host_integration",
+                "hostname": host_data.get('hostname', ''),
+                "json": integration_payload,
+                "generated_at": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response_data, indent=2).encode('utf-8'))
+
+        except Exception as e:
+            self.send_error(500, f"Host integration export failed: {str(e)}")
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 9999))
