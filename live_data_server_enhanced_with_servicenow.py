@@ -2699,29 +2699,35 @@ ${{JSON.stringify(jsonData, null, 2)}}
             "sys_class_name": "cmdb_ci_computer",
             "short_description": f"CrowdStrike managed host: {host_data.get('hostname')}",
             "discovery_source": "CrowdStrike Falcon",
-            "ip_address": ', '.join(host_data.get('local_ip', [])),
+            "ip_address": host_data.get('ip_address', ''),  # Use single IP field
             "host_name": host_data.get('hostname', ''),
             "dns_domain": host_data.get('machine_domain', ''),
-            "os": host_data.get('os_version', ''),
-            "os_version": host_data.get('os_version', ''),
+            "os": host_data.get('os_type', ''),  # Corrected field mapping
+            "os_version": host_data.get('os_type', ''),  # Use os_type for both
             "manufacturer": host_data.get('system_manufacturer', ''),
             "model_id": host_data.get('system_product_name', ''),
             "serial_number": host_data.get('serial_number', ''),
             "mac_address": host_data.get('mac_address', ''),
             "install_status": "1",
-            # Custom CrowdStrike fields
+            # Custom CrowdStrike fields with corrected mappings
             "u_device_id": host_data.get('device_id', ''),
             "u_external_ip": host_data.get('external_ip', ''),
-            "u_platform_name": host_data.get('platform_name', ''),
+            "u_platform_name": host_data.get('platform', ''),  # Corrected field name
             "u_agent_version": host_data.get('agent_version', ''),
             "u_last_seen": host_data.get('last_seen', ''),
+            "u_first_seen": host_data.get('first_seen', ''),  # Add first seen
+            "u_deployment_id": host_data.get('deployment_id', ''),  # Add deployment ID
+            "u_signature": host_data.get('signature', ''),  # Add signature
+            "u_host_type": host_data.get('type', ''),  # Add host type
+            "u_host_status": host_data.get('status', ''),  # Add host status
+            "u_last_login_user": host_data.get('last_login_user', ''),  # Add last login user
             "u_bios_manufacturer": host_data.get('bios_manufacturer', ''),
             "u_bios_version": host_data.get('bios_version', ''),
             "u_cpu_signature": host_data.get('cpu_signature', ''),
-            "u_ou": ', '.join(host_data.get('ou', [])),
-            "u_tags": ', '.join(host_data.get('tags', [])),
-            "u_groups": ', '.join(host_data.get('groups', [])),
-            "u_policies": ', '.join(host_data.get('policies', [])),
+            "u_ou": ', '.join(host_data.get('ou', [])) if host_data.get('ou') else '',
+            "u_tags": ', '.join(host_data.get('tags', [])) if host_data.get('tags') else '',
+            "u_groups": ', '.join(host_data.get('groups', [])) if host_data.get('groups') else '',
+            "u_policies": ', '.join(host_data.get('policies', [])) if host_data.get('policies') else '',
             "u_config_id_build": host_data.get('config_id_build', ''),
             "u_config_id_platform": host_data.get('config_id_platform', ''),
             "u_pointer_size": str(host_data.get('pointer_size', '')),
@@ -2818,15 +2824,15 @@ ${{JSON.stringify(jsonData, null, 2)}}
             "u_policies": ', '.join(host_data.get('policies', []))
         }
 
-    def build_integration_payload(self, service_data, integration_config):
-        """Build complete integration payload"""
-        return {
+    def build_integration_payload(self, service_data, integration_config, host_details=None):
+        """Build complete integration payload with optional host context"""
+        payload = {
             "integration_type": "servicenow",
             "action": "sync_service",
             "timestamp": datetime.now().isoformat(),
             "service_data": {
                 "name": service_data.get('name'),
-                "aspm_service_id": str(service_data.get('id', '')),
+                "asmp_service_id": str(service_data.get('id', '')),
                 "type": service_data.get('type', 'Unknown'),
                 "risk_score": service_data.get('riskScore', 0),
                 "risk_severity": service_data.get('riskSeverity', 'Unknown'),
@@ -2838,8 +2844,110 @@ ${{JSON.stringify(jsonData, null, 2)}}
             "integration_config": integration_config
         }
 
+        # Add host context if available
+        if host_details:
+            payload["host_context"] = {
+                "hostname": host_details.get('hostname', ''),
+                "ip_address": host_details.get('ip_address', ''),
+                "external_ip": host_details.get('external_ip', ''),
+                "platform": host_details.get('platform', ''),
+                "os_type": host_details.get('os_type', ''),
+                "agent_version": host_details.get('agent_version', ''),
+                "last_seen": host_details.get('last_seen', ''),
+                "status": host_details.get('status', ''),
+                "system_manufacturer": host_details.get('system_manufacturer', '')
+            }
+
+        return payload
+
+    def get_host_details_for_service(self, hostname, session_data):
+        """Get host details from Falcon API for service export context"""
+        try:
+            if not hostname:
+                return None
+
+            print(f"🔍 Getting host details for service export: {hostname}")
+
+            # Get credentials from session
+            base_url = session_data.get('base_url', 'https://api.crowdstrike.com')
+            client_id = session_data.get('client_id')
+            client_secret = session_data.get('client_secret')
+
+            if not client_id or not client_secret:
+                return None
+
+            # Get access token
+            token_data = self.get_access_token(client_id, client_secret, base_url)
+            if not token_data:
+                return None
+
+            access_token = token_data.get('access_token')
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            # Search for devices by hostname
+            host_ids_url = f'{base_url}/devices/queries/devices/v1'
+            response = requests.get(host_ids_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            device_ids = result.get('resources', [])
+
+            # Get device details in batches to find our hostname
+            device_details_url = f'{base_url}/devices/entities/devices/v2'
+            batch_size = 100
+            hostname_lower = hostname.lower()
+
+            for i in range(0, len(device_ids), batch_size):
+                batch_ids = device_ids[i:i + batch_size]
+                payload = {'ids': batch_ids}
+                details_response = requests.post(device_details_url, headers=headers, json=payload, timeout=30)
+
+                if details_response.status_code == 200:
+                    details_result = details_response.json()
+                    devices = details_result.get('resources', [])
+
+                    # Search for our hostname
+                    for device in devices:
+                        device_hostname = device.get('hostname', '').lower()
+                        if device_hostname == hostname_lower:
+                            print(f"✅ Found host details for {hostname}")
+                            # Transform to match the expected format
+                            return {
+                                'hostname': device.get('hostname', ''),
+                                'ip_address': device.get('local_ip', ''),
+                                'external_ip': device.get('external_ip', ''),
+                                'mac_address': device.get('mac_address', ''),
+                                'os_type': device.get('os_version', ''),
+                                'platform': device.get('platform_name', ''),
+                                'agent_version': device.get('agent_version', ''),
+                                'last_seen': device.get('last_seen', ''),
+                                'first_seen': device.get('first_seen', ''),
+                                'device_id': device.get('device_id', ''),
+                                'deployment_id': device.get('cid', ''),
+                                'signature': device.get('machine_domain', ''),
+                                'type': 'Machine',
+                                'status': device.get('status', ''),
+                                'last_login_user': device.get('last_login_user', ''),
+                                'bios_version': device.get('bios_version', ''),
+                                'system_manufacturer': device.get('system_manufacturer', ''),
+                                'system_product_name': device.get('system_product_name', ''),
+                                'bios_manufacturer': device.get('bios_manufacturer', ''),
+                                'cpu_signature': device.get('cpu_signature', ''),
+                                'machine_domain': device.get('machine_domain', ''),
+                                'ou': device.get('ou', []),
+                                'tags': device.get('tags', []),
+                                'groups': device.get('groups', []),
+                                'policies': device.get('policies', [])
+                            }
+
+            print(f"❌ Host {hostname} not found in Falcon")
+            return None
+
+        except Exception as e:
+            print(f"❌ Error getting host details for {hostname}: {str(e)}")
+            return None
+
     def handle_servicenow_export_service(self):
-        """Handle ServiceNow CMDB CI export"""
+        """Handle ServiceNow CMDB CI export with host context"""
         if not self.is_authenticated():
             self.send_error(401, "Unauthorized")
             return
@@ -2850,7 +2958,66 @@ ${{JSON.stringify(jsonData, null, 2)}}
             request_data = json.loads(post_data.decode('utf-8'))
 
             service_data = request_data.get('serviceData', {})
-            cmdb_json = self.build_servicenow_cmdb_json(service_data, {})
+            service_name = request_data.get('serviceName', '')
+
+            print(f"🔍 ENHANCED EXPORT DEBUG: serviceName='{service_name}', serviceData keys: {list(service_data.keys())}")
+
+            # If no serviceData provided, we need to fetch it from ASPM
+            if not service_data and service_name:
+                print(f"🔍 No serviceData provided, fetching service details for: {service_name}")
+                # Get fresh service data from ASPM to access raw deployment information
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    # Use the query_services method to get full service data
+                    try:
+                        services = self.query_services(service_name, session_data)
+                        if services:
+                            service_data = services[0]  # Use first match
+                            print(f"✅ Fetched service data for '{service_name}', keys: {list(service_data.keys())}")
+                        else:
+                            print(f"❌ Could not find service data for '{service_name}'")
+                    except Exception as e:
+                        print(f"❌ Error fetching service data: {e}")
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            print(f"🔍 Checking deployment data in service_data...")
+            print(f"🔍 deployment_hosts: {service_data.get('deployment_hosts', 'NOT_FOUND')}")
+            print(f"🔍 deployments: {service_data.get('deployments', 'NOT_FOUND')}")
+
+            # Try deployment_hosts first (string array) - but handle empty arrays
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0 and deployment_hosts[0]:
+                primary_host = deployment_hosts[0]  # Use first host if not empty string
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                print(f"🔍 Checking deployments array: {len(deployments)} deployments found")
+                if deployments and len(deployments) > 0:
+                    first_deployment = deployments[0]
+                    if isinstance(first_deployment, dict):
+                        primary_host = first_deployment.get('hostname')  # Extract hostname from first deployment
+                        print(f"🔍 Using host from deployments array: {primary_host}")
+                    else:
+                        print(f"🔍 First deployment is not a dict: {type(first_deployment)}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced service export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for service {service_data.get('name', service_name)}")
+
+            cmdb_json = self.build_servicenow_cmdb_json(service_data, {}, host_details)
 
             response_data = {
                 "success": True,
@@ -2870,7 +3037,7 @@ ${{JSON.stringify(jsonData, null, 2)}}
             self.send_error(500, f"Export failed: {str(e)}")
 
     def handle_servicenow_export_incident(self):
-        """Handle ServiceNow Incident export"""
+        """Handle ServiceNow Incident export with host context"""
         if not self.is_authenticated():
             self.send_error(401, "Unauthorized")
             return
@@ -2881,7 +3048,36 @@ ${{JSON.stringify(jsonData, null, 2)}}
             request_data = json.loads(post_data.decode('utf-8'))
 
             service_data = request_data.get('serviceData', {})
-            incident_json = self.build_servicenow_incident_json(service_data, {})
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            # Try deployment_hosts first (string array)
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0:
+                primary_host = deployment_hosts[0]  # Use first host
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                if deployments and len(deployments) > 0:
+                    primary_host = deployments[0].get('hostname')  # Extract hostname from first deployment
+                    print(f"🔍 Using host from deployments array: {primary_host}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced incident export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for incident export: {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for incident export of service {service_data.get('name', 'unknown')}")
+
+            incident_json = self.build_servicenow_incident_json(service_data, {}, host_details)
 
             response_data = {
                 "success": True,
@@ -2901,7 +3097,7 @@ ${{JSON.stringify(jsonData, null, 2)}}
             self.send_error(500, f"Export failed: {str(e)}")
 
     def handle_servicenow_export_integration(self):
-        """Handle complete ServiceNow integration payload export"""
+        """Handle complete ServiceNow integration payload export with host context"""
         if not self.is_authenticated():
             self.send_error(401, "Unauthorized")
             return
@@ -2912,7 +3108,36 @@ ${{JSON.stringify(jsonData, null, 2)}}
             request_data = json.loads(post_data.decode('utf-8'))
 
             service_data = request_data.get('serviceData', {})
-            integration_payload = self.build_integration_payload(service_data, {})
+
+            # Get host details for the first deployment host (if available)
+            host_details = None
+            primary_host = None
+
+            # Try deployment_hosts first (string array)
+            deployment_hosts = service_data.get('deployment_hosts', [])
+            if deployment_hosts and len(deployment_hosts) > 0:
+                primary_host = deployment_hosts[0]  # Use first host
+                print(f"🔍 Using host from deployment_hosts: {primary_host}")
+            else:
+                # Fallback to deployments array (object array with hostname field)
+                deployments = service_data.get('deployments', [])
+                if deployments and len(deployments) > 0:
+                    primary_host = deployments[0].get('hostname')  # Extract hostname from first deployment
+                    print(f"🔍 Using host from deployments array: {primary_host}")
+
+            if primary_host:
+                session_id = self.get_session_id()
+                if session_id and session_id in self.sessions:
+                    session_data = self.sessions[session_id]
+                    host_details = self.get_host_details_for_service(primary_host, session_data)
+                    if host_details:
+                        print(f"🎯 Enhanced integration export with host context: {primary_host}")
+                    else:
+                        print(f"⚠️ Could not get host details for integration export: {primary_host}")
+            else:
+                print(f"ℹ️ No deployment hosts found for integration export of service {service_data.get('name', 'unknown')}")
+
+            integration_payload = self.build_integration_payload(service_data, {}, host_details)
 
             response_data = {
                 "success": True,
