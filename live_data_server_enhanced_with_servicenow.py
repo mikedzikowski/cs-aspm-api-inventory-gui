@@ -2463,6 +2463,7 @@ ${{JSON.stringify(jsonData, null, 2)}}
                                                         "method": iface.get("method", "GET"),
                                                         "type": iface.get("type", "HTTP"),
                                                         "technology": iface.get("technology", "REST"),
+                                                        "schema": iface.get("schema", "http"),
                                                         "interface_id": iface.get("id")
                                                     }
                                                     for iface in service_detail.get("interfaces", [])[:5]  # First 5 endpoints

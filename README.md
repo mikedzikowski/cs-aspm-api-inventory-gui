@@ -246,6 +246,7 @@ Complete host configuration item export with discovered applications and API end
           "method": "GET",
           "type": "HTTP",
           "technology": "REST",
+          "schema": "https",
           "interface_id": 200000000001
         },
         {
@@ -253,6 +254,7 @@ Complete host configuration item export with discovered applications and API end
           "method": "POST",
           "type": "HTTP",
           "technology": "REST",
+          "schema": "https",
           "interface_id": 200000000003
         }
       ]
@@ -269,6 +271,7 @@ Complete host configuration item export with discovered applications and API end
           "method": "POST",
           "type": "HTTP",
           "technology": "REST",
+          "schema": "https",
           "interface_id": 200000000010
         },
         {
@@ -276,6 +279,7 @@ Complete host configuration item export with discovered applications and API end
           "method": "GET",
           "type": "HTTP",
           "technology": "REST",
+          "schema": "http",
           "interface_id": 200000000012
         }
       ]
