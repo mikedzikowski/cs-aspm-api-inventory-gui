@@ -1,21 +1,44 @@
-# 🔍 ASPM Service Inventory
+# 🔍 ASPM Service Inventory with ServiceNow Integration
 
-A web application for discovering and managing services using the CrowdStrike ASPM API.
+A comprehensive web application for discovering and managing services using the CrowdStrike ASPM API, with enhanced ServiceNow integration capabilities.
 
-## ✨ Features
+## ✨ Enhanced Features
 
+### 🎯 **Core Functionality**
 - **Service Discovery**: Search services by hostname and platform
 - **Host-to-Service Mapping**: Find which services are deployed on hosts
 - **Real-time Data**: Live integration with CrowdStrike ASPM API
 - **Secure Authentication**: OAuth2-based CrowdStrike authentication
 - **Web Interface**: Modern, responsive interface for service exploration
 
+### 🚀 **ServiceNow Integration (NEW)**
+- **📋 JSON Export**: 6 different ServiceNow-compatible export formats
+- **🏠 Host Integration**: Complete host data with ASMP-discovered applications
+- **📊 Service Integration**: Service CMDB CI, Incident, and Integration formats
+- **🔄 Real-time Data**: No mock data - all live from CrowdStrike APIs
+- **📈 Comprehensive Data**: "More data is better" - maximum detail in exports
+
 ## 🚀 Deployment Options
 
-### Option 1: GitHub Container Registry (Recommended)
+### Option 1: Enhanced ServiceNow Version (Latest)
 
 ```bash
-# Pull and run from GitHub Container Registry
+# Enhanced version with ServiceNow integration
+docker run -d \
+  --name aspm-servicenow-inventory \
+  -p 8080:8080 \
+  -e CROWDSTRIKE_CLIENT_ID="your_client_id" \
+  -e CROWDSTRIKE_CLIENT_SECRET="your_client_secret" \
+  ghcr.io/mikedzikowski/aspm-api-inventory:v1.1.0-servicenow
+```
+
+**Features**: Complete host + service data, 6 ServiceNow export formats, real-time ASPM application discovery
+**Access**: <http://localhost:8080>
+
+### Option 2: Standard Version
+
+```bash
+# Standard service discovery version
 docker run -d \
   --name aspm-service-inventory \
   -p 8080:8080 \
@@ -26,7 +49,7 @@ docker run -d \
 
 **Access**: <http://localhost:8080>
 
-### Option 2: Local Docker Build
+### Option 3: Local Development
 
 ```bash
 # Clone repository

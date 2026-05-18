@@ -441,6 +441,14 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                 .service-item {{ background: #0d1117; padding: 10px; margin: 5px 0; border-radius: 4px; border: 1px solid #21262d; }}
                 .service-item-header {{ display: flex; justify-content: space-between; align-items: center; }}
                 .service-endpoints {{ margin-top: 8px; color: #8b949e; font-size: 0.9rem; }}
+                .export-section {{ background: #0f1419; border: 1px solid #21262d; border-radius: 6px; padding: 15px; margin-top: 15px; }}
+                .export-buttons {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+                .export-btn {{ background: #1f6feb; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }}
+                .export-btn:hover {{ background: #2ea043; }}
+                .export-btn.incident {{ background: #d73a49; }}
+                .export-btn.incident:hover {{ background: #f14e60; }}
+                .export-btn.integration {{ background: #6f42c1; }}
+                .export-btn.integration:hover {{ background: #8b5cf6; }}
             </style>
         </head>
         <body>
@@ -910,6 +918,19 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                     ` : ''}}
                                 </div>
                                 ` : ''}}
+
+                                <!-- JSON Export Section -->
+                                <div class="export-section">
+                                    <h5 style="color: #58a6ff; margin-bottom: 10px;">📤 JSON Export</h5>
+                                    <div class="export-buttons">
+                                        <button class="export-btn" onclick="exportServiceNow('cmdb', ${{index}})">📋 CMDB CI</button>
+                                        <button class="export-btn incident" onclick="exportServiceNow('incident', ${{index}})">🚨 Incident</button>
+                                        <button class="export-btn integration" onclick="exportServiceNow('integration', ${{index}})">🔗 Integration</button>
+                                    </div>
+                                    <div style="color: #8b949e; font-size: 0.8rem; margin-top: 8px;">
+                                        Export service data as structured JSON
+                                    </div>
+                                </div>
                             </div>
                         `;
                     }});
@@ -1013,6 +1034,19 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                 </ul>
                             </div>
                             `}}
+
+                            <!-- JSON Host Export Section -->
+                            <div class="export-section">
+                                <h5 style="color: #58a6ff; margin-bottom: 10px;">📤 JSON Host Export</h5>
+                                <div class="export-buttons">
+                                    <button class="export-btn" onclick="exportHostServiceNow('cmdb')">📋 Host CMDB CI</button>
+                                    <button class="export-btn incident" onclick="exportHostServiceNow('incident')">🚨 Host Incident</button>
+                                    <button class="export-btn integration" onclick="exportHostServiceNow('integration')">🔗 Host Integration</button>
+                                </div>
+                                <div style="color: #8b949e; font-size: 0.8rem; margin-top: 8px;">
+                                    Export complete host details as structured JSON
+                                </div>
+                            </div>
                         </div>
                     `;
 
@@ -1071,6 +1105,157 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                         const hiddenCount = hiddenSection.children.length;
                         expandText.textContent = `▼ Show ${{hiddenCount}} More Interfaces`;
                     }}
+                }};
+
+                // Global variables to store current data for exports
+                let currentServices = [];
+                let currentHostData = null;
+                let currentDeployedServices = [];
+
+                // ServiceNow/JSON export functions for services
+                window.exportServiceNow = function(exportType, serviceIndex) {{
+                    if (!currentServices[serviceIndex]) {{
+                        alert('Service data not available for export');
+                        return;
+                    }}
+
+                    const service = currentServices[serviceIndex];
+                    const endpoint = `/api/servicenow/export-${{exportType === 'cmdb' ? 'service' : exportType}}`;
+
+                    fetch(endpoint, {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                        }},
+                        body: JSON.stringify({{
+                            serviceData: service
+                        }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            showExportModal(data.json, `${{exportType.toUpperCase()}} Export for ${{service.name}}`);
+                        }} else {{
+                            alert('Export failed: ' + (data.error || 'Unknown error'));
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error('Export error:', error);
+                        alert('Export failed: ' + error.message);
+                    }});
+                }};
+
+                // ServiceNow/JSON export functions for hosts
+                window.exportHostServiceNow = function(exportType) {{
+                    if (!currentHostData) {{
+                        alert('Host data not available for export');
+                        return;
+                    }}
+
+                    const endpoint = `/api/servicenow/export-host-${{exportType}}`;
+
+                    fetch(endpoint, {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                        }},
+                        body: JSON.stringify({{
+                            hostData: currentHostData,
+                            deployedServices: currentDeployedServices,
+                            severity: exportType === 'incident' ? 'Medium' : undefined
+                        }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            showExportModal(data.json, `Host ${{exportType.toUpperCase()}} Export for ${{currentHostData.hostname}}`);
+                        }} else {{
+                            alert('Export failed: ' + (data.error || 'Unknown error'));
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error('Export error:', error);
+                        alert('Export failed: ' + error.message);
+                    }});
+                }};
+
+                // Function to show export results in a modal
+                function showExportModal(jsonData, title) {{
+                    const modal = document.createElement('div');
+                    modal.style.cssText = `
+                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                        background: rgba(0,0,0,0.8); z-index: 1000; display: flex;
+                        align-items: center; justify-content: center; padding: 20px;
+                    `;
+
+                    const content = document.createElement('div');
+                    content.style.cssText = `
+                        background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+                        padding: 20px; max-width: 90%; max-height: 90%; overflow: auto;
+                        color: #c9d1d9; font-family: monospace;
+                    `;
+
+                    content.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0; color: #58a6ff;">${{title}}</h3>
+                            <button onclick="this.closest('[style*=fixed]').remove()"
+                                    style="background: #da3633; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                                ✕ Close
+                            </button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="copyToClipboard(this.dataset.json)" data-json='${{JSON.stringify(jsonData)}}'
+                                    style="background: #238636; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">
+                                📋 Copy JSON
+                            </button>
+                            <button onclick="downloadJson(this.dataset.json, '${{title.replace(/[^a-zA-Z0-9]/g, '_')}}.json')" data-json='${{JSON.stringify(jsonData)}}'
+                                    style="background: #1f6feb; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer;">
+                                💾 Download JSON
+                            </button>
+                        </div>
+                        <pre style="background: #161b22; padding: 15px; border-radius: 4px; overflow: auto; white-space: pre-wrap;">
+${{JSON.stringify(jsonData, null, 2)}}
+                        </pre>
+                    `;
+
+                    modal.appendChild(content);
+                    document.body.appendChild(modal);
+                }}
+
+                // Helper functions for export modal
+                window.copyToClipboard = function(jsonStr) {{
+                    navigator.clipboard.writeText(jsonStr).then(() => {{
+                        alert('JSON copied to clipboard!');
+                    }}).catch(err => {{
+                        console.error('Could not copy text: ', err);
+                        alert('Failed to copy to clipboard');
+                    }});
+                }};
+
+                window.downloadJson = function(jsonStr, filename) {{
+                    const blob = new Blob([jsonStr], {{ type: 'application/json' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }};
+
+                // Modify existing display functions to store data for exports
+                const originalDisplayServiceResults = displayServiceResults;
+                displayServiceResults = function(data) {{
+                    currentServices = data.services || [];
+                    originalDisplayServiceResults(data);
+                }};
+
+                const originalDisplayHostResults = displayHostResults;
+                displayHostResults = function(data) {{
+                    currentHostData = data.host || null;
+                    currentDeployedServices = data.deployed_services || [];
+                    originalDisplayHostResults(data);
                 }};
             </script>
         </body>
@@ -2505,9 +2690,9 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
         return base_json
 
-    def build_servicenow_host_cmdb_json(self, host_data):
+    def build_servicenow_host_cmdb_json(self, host_data, deployed_services=None):
         """Build ServiceNow CMDB CI JSON specifically for host data"""
-        return {
+        base_json = {
             "name": host_data.get('hostname', 'Unknown Host'),
             "ci_class": "cmdb_ci_computer",
             "operational_status": "1",  # Operational
@@ -2543,6 +2728,23 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             "u_reduced_functionality_mode": host_data.get('reduced_functionality_mode', ''),
             "u_provision_status": host_data.get('provision_status', '')
         }
+
+        # Add ASPM-discovered applications/services deployed on this host
+        if deployed_services:
+            base_json["u_deployed_applications"] = [
+                {
+                    "name": svc.get('name', ''),
+                    "service_id": svc.get('service_id', ''),
+                    "technology": svc.get('technology', ''),
+                    "service_type": svc.get('service_type', ''),
+                    "endpoints_count": svc.get('endpoints_count', 0),
+                    "sample_endpoints": svc.get('sample_endpoints', [])
+                } for svc in deployed_services
+            ]
+            base_json["u_deployed_applications_count"] = len(deployed_services)
+            base_json["u_deployed_applications_names"] = ', '.join([svc.get('name', '') for svc in deployed_services])
+
+        return base_json
 
     def build_servicenow_incident_json(self, service_data, integration_config, host_details=None):
         """Build ServiceNow Incident JSON from service data"""
@@ -2741,7 +2943,9 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
             request_data = json.loads(post_data.decode('utf-8'))
 
             host_data = request_data.get('hostData', {})
-            cmdb_json = self.build_servicenow_host_cmdb_json(host_data)
+            deployed_services = request_data.get('deployedServices', [])
+
+            cmdb_json = self.build_servicenow_host_cmdb_json(host_data, deployed_services)
 
             response_data = {
                 "success": True,

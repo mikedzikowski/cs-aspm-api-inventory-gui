@@ -1009,16 +1009,16 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
                 // Function to search for a specific service (used by clickable links)
                 window.searchSpecificService = function(serviceName) {{
-                    // Set the search input
-                    document.getElementById('searchInput').value = serviceName;
-
-                    // Switch to service radio button
+                    // Switch to service radio button first
                     const serviceRadio = document.querySelector('input[name="searchType"][value="service"]');
                     if (serviceRadio) {{
                         serviceRadio.checked = true;
                         // Trigger the onchange event to update the interface
                         updateSearchInterface();
                     }}
+
+                    // Set the search input AFTER updating the interface (which clears it)
+                    document.getElementById('searchInput').value = serviceName;
 
                     const searchTypeDiv = document.getElementById('searchType');
                     searchTypeDiv.textContent = `🔍 Searching for service "${{serviceName}}"`;
@@ -1027,16 +1027,16 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
 
                 // Function to search for a specific host (used by deployment links)
                 window.searchHostByName = function(hostname) {{
-                    // Set the search input
-                    document.getElementById('searchInput').value = hostname;
-
-                    // Switch to host radio button
+                    // Switch to host radio button first
                     const hostRadio = document.querySelector('input[name="searchType"][value="host"]');
                     if (hostRadio) {{
                         hostRadio.checked = true;
                         // Trigger the onchange event to update the interface
                         updateSearchInterface();
                     }}
+
+                    // Set the search input AFTER updating the interface (which clears it)
+                    document.getElementById('searchInput').value = hostname;
 
                     const searchTypeDiv = document.getElementById('searchType');
                     searchTypeDiv.textContent = `🖥️ Searching for host "${{hostname}}"`;
@@ -2354,9 +2354,19 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                     details_result = details_response.json()
                     devices = details_result.get('resources', [])
 
+                    # DEBUG: Show some hostnames we're searching through
+                    if i == 0:  # Only log for first batch to avoid spam
+                        sample_hostnames = [device.get('hostname', 'NO_HOSTNAME') for device in devices[:10]]
+                        print(f"   🔍 DEBUG: Sample hostnames in Falcon: {sample_hostnames}")
+
                     # Search for our hostname
                     for device in devices:
                         device_hostname = device.get('hostname', '').lower()
+
+                        # DEBUG: Show matching attempts for our target
+                        if 'market' in device_hostname or 'ubuntu' in device_hostname or 'vm-' in device_hostname:
+                            print(f"   🔍 DEBUG: Checking potential match: '{device.get('hostname')}' against '{hostname}'")
+
                         if hostname.lower() in device_hostname or device_hostname in hostname.lower():
                             print(f"   ✅ Found matching host in Falcon: {device.get('hostname')}")
                             return {
@@ -2373,7 +2383,55 @@ class ASPMLiveDataHandler(BaseHTTPRequestHandler):
                                 "device_id": device.get("device_id")
                             }
 
-            print(f"   ❌ No matching host found in Falcon for: {hostname}")
+            print(f"   ❌ No matching host found in Falcon batch search for: {hostname}")
+
+            # FALLBACK: Try direct hostname filter search
+            print(f"   🔄 Trying direct hostname filter search for: {hostname}")
+            try:
+                filter_url = f'{base_url}/devices/queries/devices/v1?filter=hostname:"{hostname}"&limit=10'
+                filter_response = requests.get(filter_url, headers=headers, timeout=30)
+
+                if filter_response.status_code == 200:
+                    filter_result = filter_response.json()
+                    filter_device_ids = filter_result.get('resources', [])
+                    print(f"   📋 Filter search found {len(filter_device_ids)} matching devices")
+
+                    if filter_device_ids:
+                        # Get details for the filtered devices
+                        payload = {'ids': filter_device_ids[:1]}  # Just get the first match
+                        details_response = requests.post(device_details_url, headers=headers, json=payload, timeout=30)
+
+                        if details_response.status_code == 200:
+                            details_result = details_response.json()
+                            devices = details_result.get('resources', [])
+
+                            if devices:
+                                device = devices[0]
+                                print(f"   ✅ FALLBACK SUCCESS: Found host via filter: {device.get('hostname')}")
+                                return {
+                                    "ip_address": device.get("local_ip"),
+                                    "external_ip": device.get("external_ip"),
+                                    "mac_address": device.get("mac_address"),
+                                    "os_version": device.get("os_version"),
+                                    "platform_name": device.get("platform_name"),
+                                    "agent_version": device.get("agent_version"),
+                                    "last_login_user": device.get("last_login_user"),
+                                    "status": device.get("status"),
+                                    "bios_version": device.get("bios_version"),
+                                    "system_manufacturer": device.get("system_manufacturer"),
+                                    "device_id": device.get("device_id")
+                                }
+                        else:
+                            print(f"   ❌ Filter device details failed: {details_response.status_code}")
+                    else:
+                        print(f"   ❌ No devices found with hostname filter")
+                else:
+                    print(f"   ❌ Filter query failed: {filter_response.status_code}")
+
+            except Exception as filter_e:
+                print(f"   ⚠️ Filter search failed: {filter_e}")
+
+            print(f"   ❌ All search methods failed for: {hostname}")
             return {}
 
         except Exception as e:
