@@ -9,6 +9,7 @@ A web application for discovering and managing services using the CrowdStrike AS
 - **Real-time Data**: Live integration with CrowdStrike ASPM API
 - **Secure Authentication**: OAuth2-based CrowdStrike authentication
 - **Web Interface**: Modern, responsive interface for service exploration
+- **ServiceNow Integration**: Export service data in ServiceNow-compatible formats
 
 ## 🚀 Deployment Options
 
@@ -21,7 +22,7 @@ docker run -d \
   -p 8080:8080 \
   -e CROWDSTRIKE_CLIENT_ID="your_client_id" \
   -e CROWDSTRIKE_CLIENT_SECRET="your_client_secret" \
-  ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
+  ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.3
 ```
 
 **Access**: <http://localhost:8080>
@@ -31,7 +32,7 @@ docker run -d \
 ```bash
 # Clone repository
 git clone https://github.com/mikedzikowski/cs-aspm-api-inventory-gui.git
-cd cs-asmp-api-inventory-gui
+cd cs-aspm-api-inventory-gui
 
 # Build and run
 docker build -f Dockerfile.secure -t aspm-inventory .
@@ -55,11 +56,11 @@ cd cs-aspm-api-inventory-gui
 # Install dependencies
 pip install -r requirements.txt
 
-# Run application
+# Run application (with enhanced ServiceNow features)
 PORT=8080 \
 CROWDSTRIKE_CLIENT_ID="your_client_id" \
 CROWDSTRIKE_CLIENT_SECRET="your_client_secret" \
-python3 live_data_server_with_auth.py
+python3 live_data_server_enhanced_with_servicenow.py
 ```
 
 **Access**: <http://localhost:8080>
@@ -89,202 +90,8 @@ FLASK_ENV=production
 
 ```bash
 # Run with environment file
-python3 live_data_server_with_auth.py
+python3 live_data_server_enhanced_with_servicenow.py
 ```
-
-### Option 5: Kubernetes Deployment
-
-#### Quick Deploy with kubectl
-
-```bash
-# Create secret for CrowdStrike credentials
-kubectl create secret generic crowdstrike-credentials \
-  --from-literal=client-id="your_client_id" \
-  --from-literal=client-secret="your_client_secret"
-
-# Apply deployment manifests
-kubectl apply -f k8s/
-```
-
-#### Manual Kubernetes Manifests
-
-**Create namespace (optional):**
-```yaml
-# k8s/namespace.yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: aspm-inventory
-```
-
-**Secret for credentials:**
-```yaml
-# k8s/secret.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: crowdstrike-credentials
-  namespace: aspm-inventory
-type: Opaque
-stringData:
-  client-id: "your_client_id_here"
-  client-secret: "your_client_secret_here"
-```
-
-**Deployment:**
-```yaml
-# k8s/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: aspm-service-inventory
-  namespace: aspm-inventory
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: aspm-service-inventory
-  template:
-    metadata:
-      labels:
-        app: aspm-service-inventory
-    spec:
-      containers:
-      - name: aspm-inventory
-        image: ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
-        ports:
-        - containerPort: 8080
-        env:
-        - name: CROWDSTRIKE_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: crowdstrike-credentials
-              key: client-id
-        - name: CROWDSTRIKE_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: crowdstrike-credentials
-              key: client-secret
-        - name: PORT
-          value: "8080"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-```
-
-**Service:**
-```yaml
-# k8s/service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: aspm-service-inventory
-  namespace: aspm-inventory
-spec:
-  selector:
-    app: aspm-service-inventory
-  ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 8080
-  type: ClusterIP
-```
-
-**Ingress (optional):**
-```yaml
-# k8s/ingress.yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: aspm-service-inventory
-  namespace: aspm-inventory
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-spec:
-  rules:
-  - host: aspm-inventory.yourdomain.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: aspm-service-inventory
-            port:
-              number: 80
-```
-
-#### Helm Chart Deployment
-
-**Create Helm chart:**
-```bash
-# Create custom values file
-cat > values.yaml << EOF
-image:
-  repository: ghcr.io/mikedzikowski/aspm-api-inventory
-  tag: v1.0.0
-
-crowdstrike:
-  clientId: "your_client_id"
-  clientSecret: "your_client_secret"
-
-ingress:
-  enabled: true
-  host: aspm-inventory.yourdomain.com
-
-resources:
-  requests:
-    memory: 128Mi
-    cpu: 100m
-  limits:
-    memory: 512Mi
-    cpu: 500m
-EOF
-
-# Install with Helm
-helm install aspm-inventory ./helm/aspm-inventory -f values.yaml
-```
-
-#### OpenShift Deployment
-
-```bash
-# Create new project
-oc new-project aspm-inventory
-
-# Create secret
-oc create secret generic crowdstrike-credentials \
-  --from-literal=client-id="your_client_id" \
-  --from-literal=client-secret="your_client_secret"
-
-# Deploy application
-oc new-app ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0 \
-  --name=aspm-service-inventory
-
-# Set environment variables from secret
-oc set env deployment/aspm-service-inventory \
-  --from=secret/crowdstrike-credentials
-
-# Expose service
-oc expose svc/aspm-service-inventory
-```
-
-**Access**: `kubectl port-forward svc/aspm-service-inventory 8080:80` then http://localhost:8080
 
 ## 🔧 Configuration
 
@@ -301,7 +108,7 @@ oc expose svc/aspm-service-inventory
 
 ```bash
 # Run on different port
-PORT=9000 CROWDSTRIKE_CLIENT_ID="..." python3 live_data_server_with_auth.py
+PORT=9000 CROWDSTRIKE_CLIENT_ID="..." python3 live_data_server_enhanced_with_servicenow.py
 
 # Docker with custom port
 docker run -d -p 9000:9000 -e PORT=9000 -e CROWDSTRIKE_CLIENT_ID="..." aspm-inventory
@@ -318,6 +125,10 @@ docker run -d -p 9000:9000 -e PORT=9000 -e CROWDSTRIKE_CLIENT_ID="..." aspm-inve
    - Use the "Host Details" tab
    - Enter hostname to find deployed services
    - View service-to-host mappings
+4. **ServiceNow Export**:
+   - Export service data in ServiceNow CMDB CI format
+   - Generate incident tickets with service context
+   - Create integration payloads with host details
 
 ## 🔐 Security Features
 
@@ -341,7 +152,7 @@ curl http://localhost:8080/
 ### Port Already in Use
 ```bash
 # Use different port
-PORT=8181 python3 live_data_server_with_auth.py
+PORT=8181 python3 live_data_server_enhanced_with_servicenow.py
 ```
 
 ### Docker Issues
@@ -359,11 +170,14 @@ docker build --no-cache -f Dockerfile.secure -t aspm-inventory .
 | `/login` | POST | Authentication |
 | `/api/aspm/query` | POST | Service search |
 | `/api/aspm/host-details` | POST | Host-to-service mapping |
+| `/api/servicenow/export/service` | POST | ServiceNow CMDB CI export |
+| `/api/servicenow/export/incident` | POST | ServiceNow incident export |
+| `/api/servicenow/export/integration` | POST | ServiceNow integration export |
 
 ## 📄 Version Information
 
-- **Version**: 1.0.0
-- **Release Date**: 2026-05-16
+- **Version**: 1.0.3
+- **Release Date**: 2026-05-18
 - **Compatibility**: CrowdStrike ASPM API
 - **Container Registry**: ghcr.io/mikedzikowski/aspm-api-inventory
 
@@ -377,7 +191,7 @@ docker build --no-cache -f Dockerfile.secure -t aspm-inventory .
 
 **One-liner deployment:**
 ```bash
-docker run -d --name aspm-inventory -p 8080:8080 -e CROWDSTRIKE_CLIENT_ID="xxx" -e CROWDSTRIKE_CLIENT_SECRET="yyy" ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.0
+docker run -d --name aspm-inventory -p 8080:8080 -e CROWDSTRIKE_CLIENT_ID="xxx" -e CROWDSTRIKE_CLIENT_SECRET="yyy" ghcr.io/mikedzikowski/aspm-api-inventory:v1.0.3
 ```
 
 **Local development:**
